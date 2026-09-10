@@ -3,12 +3,12 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**'],
+    ignores: ['dist/**', 'node_modules/**'],
   },
   {
     rules: {
       'quotes': ['error', 'single'],
-      'indent': ['error', 2, { 'SwitchCase': 0 }],
+      'indent': ['error', 2, { 'SwitchCase': 1 }],
       'linebreak-style': ['error', 'unix'],
       'semi': ['error', 'always'],
       'comma-dangle': ['error', 'always-multiline'],
@@ -20,7 +20,7 @@ export default tseslint.config(
       'max-len': ['warn', 160],
       'object-curly-spacing': ['error', 'always'],
       'no-use-before-define': 'off',
-      '@typescript-eslint/no-use-before-define': ['error', { 'classes': false, 'enums': false }],
+      '@typescript-eslint/no-use-before-define': ['error', { 'functions': false, 'classes': false, 'enums': false }],
       '@typescript-eslint/no-unused-vars': ['error', { 'caughtErrors': 'none' }],
     },
   },

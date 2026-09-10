@@ -124,3 +124,7 @@ dist
 .idea
 
 /test/hbConfig
+
+# Peloton probe tokens and login dumps
+probe-tokens.json
+auth-dump/

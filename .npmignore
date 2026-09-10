@@ -134,3 +134,10 @@ web_modules/
 .pnp.*
 
 test/
+# Not part of the published package
+fixtures
+SPEC.md
+CLAUDE.md
+design
+assets
+probe-tokens.json
