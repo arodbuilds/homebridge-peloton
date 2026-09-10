@@ -1,0 +1,69 @@
+/**
+ * A fetch replacement that replays response envelopes in sequence and records every request.
+ *
+ * Each step is an envelope { status, headers, body } or a function (request) => envelope.
+ * The literal {{state}} in headers or body is replaced with the state seen in the /authorize request.
+ * A step may also be an Error instance, which is thrown to simulate a network failure.
+ */
+export function createFakeFetch(steps) {
+  const queue = [...steps];
+  const requests = [];
+  let authorizeState;
+
+  const fake = async (input, init = {}) => {
+    const url = String(input);
+    const headers = {};
+    new Headers(init.headers ?? {}).forEach((value, key) => {
+      headers[key] = value;
+    });
+    const request = {
+      url,
+      method: init.method ?? 'GET',
+      headers,
+      body: init.body === undefined ? undefined : String(init.body),
+      redirect: init.redirect,
+    };
+    requests.push(request);
+
+    const parsed = new URL(url);
+    if (parsed.pathname === '/authorize') {
+      authorizeState = parsed.searchParams.get('state');
+    }
+
+    const step = queue.shift();
+    if (step === undefined) {
+      throw new Error(`Unexpected request ${request.method} ${url}`);
+    }
+    if (step instanceof Error) {
+      throw step;
+    }
+    const envelope = typeof step === 'function' ? await step(request) : step;
+    return toResponse(envelope, authorizeState);
+  };
+
+  fake.requests = requests;
+  fake.remaining = () => queue.length;
+  fake.authorizeState = () => authorizeState;
+  return fake;
+}
+
+function toResponse(envelope, state) {
+  const substitute = (text) => text.replaceAll('{{state}}', state ?? '');
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(envelope.headers ?? {})) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      headers.append(name, substitute(String(item)));
+    }
+  }
+  return new Response(substitute(envelope.body ?? ''), { status: envelope.status ?? 200, headers });
+}
+
+/** Parses a recorded JSON request body. */
+export function jsonBody(request) {
+  return JSON.parse(request.body);
+}
+
+/** Parses a recorded urlencoded request body into a plain object. */
+export function formBody(request) {
+  return Object.fromEntries(new URLSearchParams(request.body));
+}
