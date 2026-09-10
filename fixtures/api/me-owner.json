@@ -1,0 +1,24 @@
+{
+  "id": "u-owner-0001",
+  "username": "owner_rider",
+  "first_name": "Owner",
+  "last_name": "Example",
+  "image_url": "https://cdn.example.invalid/avatars/u-owner-0001.jpg",
+  "is_profile_image_default": false,
+  "customized_heart_rate_zones": [
+    { "display_name": "Zone 1", "slug": "zone1", "range": "<65%", "min_value": 0, "max_value": 109 },
+    { "display_name": "Zone 2", "slug": "zone2", "range": "65-75%", "min_value": 110, "max_value": 125 },
+    { "display_name": "Zone 3", "slug": "zone3", "range": "75-85%", "min_value": 126, "max_value": 142 },
+    { "display_name": "Zone 4", "slug": "zone4", "range": "85-95%", "min_value": 143, "max_value": 159 },
+    { "display_name": "Zone 5", "slug": "zone5", "range": ">95%", "min_value": 160, "max_value": 220 }
+  ],
+  "default_max_heart_rate": 175,
+  "customized_max_heart_rate": 168,
+  "paired_devices": [
+    { "id": "dev-hrm-0001", "name": "Peloton Heart Rate Band", "serial_number": "redacted" }
+  ],
+  "last_workout_at": 1789030000,
+  "email": "redacted",
+  "location": "redacted",
+  "total_workouts": 412
+}

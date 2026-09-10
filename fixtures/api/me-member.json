@@ -1,0 +1,16 @@
+{
+  "id": "u-member-0002",
+  "username": "member_runner",
+  "first_name": "Member",
+  "last_name": "Example",
+  "image_url": "https://cdn.example.invalid/avatars/default.png",
+  "is_profile_image_default": true,
+  "customized_heart_rate_zones": [],
+  "default_max_heart_rate": 190,
+  "customized_max_heart_rate": null,
+  "paired_devices": [],
+  "last_workout_at": null,
+  "email": "redacted",
+  "location": "redacted",
+  "total_workouts": 0
+}

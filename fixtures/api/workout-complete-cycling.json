@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": "w-cyc-0001",
+      "status": "COMPLETE",
+      "fitness_discipline": "cycling",
+      "device_type": "home_bike_plus",
+      "workout_type": "class",
+      "start_time": 1789031000,
+      "end_time": 1789032800,
+      "created_at": 1789030990,
+      "title": "30 min Power Zone Ride",
+      "name": "Cycling Workout",
+      "user_id": "u-owner-0001",
+      "peloton_id": "redacted",
+      "ride": { "id": "redacted", "title": "30 min Power Zone Ride", "duration": 1800 }
+    }
+  ],
+  "limit": 1,
+  "page": 0,
+  "total": 412
+}

@@ -1,0 +1,10 @@
+{
+  "status": 302,
+  "headers": {
+    "location": "https://members.onepeloton.com/callback?code=redacted-code&state={{state}}",
+    "set-cookie": [
+      "auth0=redacted-session-2; Path=/; Expires=Fri, 11 Sep 2026 00:00:00 GMT; HttpOnly; Secure; SameSite=None"
+    ]
+  },
+  "body": ""
+}

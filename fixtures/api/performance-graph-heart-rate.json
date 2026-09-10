@@ -1,0 +1,45 @@
+{
+  "duration": 1800,
+  "is_class_plan_shown": false,
+  "seconds_since_pedaling_start": [0, 5, 10, 15, 20, 25, 30],
+  "segment_list": [],
+  "average_summaries": [],
+  "summaries": [
+    { "display_name": "Total Output", "display_unit": "kj", "value": 12, "slug": "total_output" }
+  ],
+  "metrics": [
+    {
+      "display_name": "Output",
+      "display_unit": "watts",
+      "max_value": 210,
+      "average_value": 150,
+      "values": [0, 120, 140, 150, 160, 170, 210],
+      "slug": "output"
+    },
+    {
+      "display_name": "Heart Rate",
+      "display_unit": "bpm",
+      "max_value": 152,
+      "average_value": 131,
+      "values": [98, 112, 125, 133, 141, 148, 152],
+      "slug": "heart_rate",
+      "zones": [
+        { "display_name": "Zone 1", "slug": "zone1", "range": "<65%", "max_value": 109, "min_value": 0, "duration": 5 },
+        { "display_name": "Zone 2", "slug": "zone2", "range": "65-75%", "max_value": 125, "min_value": 110, "duration": 10 },
+        { "display_name": "Zone 3", "slug": "zone3", "range": "75-85%", "max_value": 142, "min_value": 126, "duration": 10 },
+        { "display_name": "Zone 4", "slug": "zone4", "range": "85-95%", "max_value": 159, "min_value": 143, "duration": 5 },
+        { "display_name": "Zone 5", "slug": "zone5", "range": ">95%", "max_value": 220, "min_value": 160, "duration": 0 }
+      ]
+    },
+    {
+      "display_name": "Cadence",
+      "display_unit": "rpm",
+      "max_value": 95,
+      "average_value": 85,
+      "values": [0, 80, 85, 88, 90, 92, 95],
+      "slug": "cadence"
+    }
+  ],
+  "target_performance_metrics": {},
+  "location_data": []
+}
