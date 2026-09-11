@@ -35,7 +35,7 @@ node dist/scripts/auth-probe.mjs me
 node dist/scripts/auth-probe.mjs workout --keys
 ```
 
-Tokens are stored in `./probe-tokens.json` with mode 0600 and are never printed. On failure the probe prints the auth stage and HTTP status only. With `--dump`, every HTML page of the login flow is written to the given directory with form values redacted, which is what to attach when the flow needs adjusting. Token responses are never written. Delete `probe-tokens.json` and the dump directory when done.
+Tokens are stored in `./probe-tokens.json` with mode 0600 and are never printed. Before posting the credentials, `login` prints the Auth0 domain, tenant, and connection name it parsed from the login page, so a run confirms them at a glance. On failure the probe prints the auth stage and HTTP status only. With `--dump`, every HTML page of the login flow is written to the given directory with form values redacted, which is what to attach when the flow needs adjusting. Token responses are never written. Delete `probe-tokens.json` and the dump directory when done.
 
 ## License
 
