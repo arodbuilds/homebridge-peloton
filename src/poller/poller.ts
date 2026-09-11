@@ -11,7 +11,8 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
-import type { AccountRecord, AccountState, StoredDevice } from '../store/account-store.js';
+import { applyHousehold, applyProfile } from '../store/account-connect.js';
+import type { AccountRecord, AccountState } from '../store/account-store.js';
 import {
   type DeviceMap,
   EMPTY_DEVICE_MAP,
@@ -21,7 +22,6 @@ import {
   hrZoneTargets,
   isDetectable,
   matchWorkout,
-  toStoredZones,
   zoneBounds,
   zoneForSample,
 } from './rules.js';
@@ -77,6 +77,11 @@ export interface PollerOptions {
   scheduler?: Scheduler;
   /** device_type to device id, per account id. Accounts without an entry get an empty map. */
   deviceMaps?: Map<string, DeviceMap>;
+  /**
+   * Called once when an account is dropped with invalid_grant. Returns the reconnected account to
+   * resume polling, or undefined to leave it reconnect_needed (SPEC section 8.2).
+   */
+  reconnect?: (accountId: string) => Promise<PollerAccount | undefined>;
 }
 
 export interface WorkoutStartedEvent {
@@ -200,6 +205,19 @@ interface AccountRuntime {
   noHeartRateLogged: boolean;
 }
 
+function newRuntime(account: PollerAccount, deviceMap: DeviceMap): AccountRuntime {
+  return {
+    account,
+    deviceMap,
+    latestWorkout: null,
+    stalePolls: 0,
+    failures: 0,
+    polling: false,
+    deviceUnavailableLogged: new Set(),
+    noHeartRateLogged: false,
+  };
+}
+
 interface TriggerRuntime {
   trigger: TriggerConfig;
   hold: HoldAfterEnd | HoldState;
@@ -217,6 +235,9 @@ export class Poller {
   private readonly now: () => number;
   private readonly scheduler: Scheduler;
   private readonly accounts = new Map<string, AccountRuntime>();
+  private readonly reconnect: ((accountId: string) => Promise<PollerAccount | undefined>) | undefined;
+  /** Device maps of dropped accounts, kept for a reconnect. */
+  private readonly retainedDeviceMaps = new Map<string, DeviceMap>();
   private readonly triggers: TriggerRuntime[];
   private readonly listeners = new Map<keyof PollerEvents, Listener<never>[]>();
 
@@ -239,21 +260,13 @@ export class Poller {
     this.store = options.store;
     this.log = options.log;
     this.now = options.now ?? Date.now;
+    this.reconnect = options.reconnect;
     this.scheduler = options.scheduler ?? {
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
     };
     for (const account of options.accounts) {
-      this.accounts.set(account.id, {
-        account,
-        deviceMap: options.deviceMaps?.get(account.id) ?? EMPTY_DEVICE_MAP,
-        latestWorkout: null,
-        stalePolls: 0,
-        failures: 0,
-        polling: false,
-        deviceUnavailableLogged: new Set(),
-        noHeartRateLogged: false,
-      });
+      this.accounts.set(account.id, newRuntime(account, options.deviceMaps?.get(account.id) ?? EMPTY_DEVICE_MAP));
     }
     this.triggers = this.config.triggers.map((trigger) => ({
       trigger,
@@ -367,6 +380,21 @@ export class Poller {
     return Math.max(this.switchOnAt ?? 0, this.lastWorkoutEndAt ?? 0) + this.config.advanced.fastSwitchAutoOffMinutes * 60_000;
   }
 
+  /**
+   * Adds or replaces a connected account and puts it on the schedule. In standby or scanning the
+   * household is re-staggered at once; while locked or released it joins when the workout is over.
+   */
+  addAccount(account: PollerAccount, deviceMap: DeviceMap = EMPTY_DEVICE_MAP): void {
+    const existing = this.accounts.get(account.id);
+    if (existing !== undefined) {
+      this.clearAccountTimer(existing);
+    }
+    this.accounts.set(account.id, newRuntime(account, deviceMap));
+    if (this.started && (this.currentState === 'standby' || this.currentState === 'scanning')) {
+      this.scheduleAll(false);
+    }
+  }
+
   /** Replaces the device map of one account, for example after a check-in. */
   setDeviceMap(accountId: string, deviceMap: DeviceMap): void {
     const runtime = this.accounts.get(accountId);
@@ -448,20 +476,7 @@ export class Poller {
         if (record === undefined) {
           continue;
         }
-        const maxHr = me.customizedMaxHeartRate ?? me.defaultMaxHeartRate ?? undefined;
-        const updated: AccountRecord = {
-          ...record,
-          userId: me.id,
-          username: me.username,
-          displayName: record.displayName ?? (`${me.firstName} ${me.lastName}`.trim() || me.username),
-          imageUrl: me.imageUrl,
-          isProfileImageDefault: me.isProfileImageDefault,
-          hrZones: toStoredZones(me.customizedHeartRateZones),
-          lastCheckedAt: this.now(),
-        };
-        if (maxHr !== undefined) {
-          updated.maxHr = maxHr;
-        }
+        const updated = applyProfile(record, me, this.now());
         account.profile = { hrZones: updated.hrZones, maxHr: updated.maxHr ?? null };
         if (record.isOwner !== false) {
           await this.updateHousehold(runtime, updated);
@@ -485,45 +500,11 @@ export class Poller {
   private async updateHousehold(runtime: AccountRuntime, record: AccountRecord): Promise<void> {
     const { account } = runtime;
     const subscriptions = await this.store.withValidToken(account.id, (token) => this.api.getSubscriptions(account.userId, token));
-    const owned = subscriptions.filter((subscription) => subscription.ownerId === account.userId);
-    record.isOwner = owned.length > 0;
-    if (!record.isOwner) {
-      delete record.devices;
-      return;
-    }
-    const devices: StoredDevice[] = [];
-    for (const subscription of owned) {
-      for (const device of subscription.attachedDevices) {
-        if (!devices.some((known) => known.id === device.id)) {
-          const stored: StoredDevice = { id: device.id, name: device.name };
-          if (device.deviceType !== undefined) {
-            stored.deviceType = device.deviceType;
-          }
-          devices.push(stored);
-        }
-      }
-    }
-    record.devices = devices;
-    const deviceMap = deviceMapFromDevices(devices);
-    for (const other of this.accounts.values()) {
-      other.deviceMap = deviceMap;
-    }
-    const existing = await this.store.loadAll();
-    const knownUserIds = new Set([account.userId, ...[...existing.values()].map((entry) => entry.userId)]);
-    for (const subscription of owned) {
-      for (const user of subscription.sharedUsers) {
-        if (user.id.length === 0 || knownUserIds.has(user.id)) {
-          continue;
-        }
-        knownUserIds.add(user.id);
-        await this.store.save(user.id, {
-          userId: user.id,
-          username: user.username,
-          displayName: `${user.firstName} ${user.lastName}`.trim() || user.username,
-          imageUrl: user.imageUrl,
-          isProfileImageDefault: user.isProfileImageDefault,
-          state: 'not_connected',
-        });
+    const devices = await applyHousehold(this.store, record, subscriptions);
+    if (record.isOwner === true) {
+      const deviceMap = deviceMapFromDevices(devices);
+      for (const other of this.accounts.values()) {
+        other.deviceMap = deviceMap;
       }
     }
   }
@@ -730,8 +711,12 @@ export class Poller {
     const { account } = runtime;
     this.clearAccountTimer(runtime);
     this.accounts.delete(account.id);
+    this.retainedDeviceMaps.set(account.id, runtime.deviceMap);
     this.log.info(`${account.displayName}: sign-in expired, reconnect needed (stage ${stage}, HTTP ${status ?? 'none'})`);
     this.emit('accountStateChanged', { accountId: account.id, displayName: account.displayName, state: 'reconnect_needed', stage, status });
+    if (this.reconnect !== undefined) {
+      this.track(this.attemptReconnect(account.id));
+    }
     if ((this.currentState === 'locked' && this.lockedAccountId === account.id)
       || (this.currentState === 'released' && this.releasedAccountId === account.id)) {
       // The workout can no longer be followed: treat it as ended and let the household resume.
@@ -743,6 +728,18 @@ export class Poller {
         this.leaveReleased();
       }
     }
+  }
+
+  /** One re-login attempt after invalid_grant; a failure leaves the account reconnect_needed. */
+  private async attemptReconnect(accountId: string): Promise<void> {
+    const reconnect = this.reconnect as NonNullable<typeof this.reconnect>;
+    const account = await reconnect(accountId);
+    if (account === undefined || !this.started) {
+      return;
+    }
+    this.addAccount(account, this.retainedDeviceMaps.get(accountId) ?? EMPTY_DEVICE_MAP);
+    this.retainedDeviceMaps.delete(accountId);
+    this.emit('accountStateChanged', { accountId: account.id, displayName: account.displayName, state: 'connected' });
   }
 
   /* ----------------------------------------------------------------------------------------------

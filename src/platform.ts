@@ -10,11 +10,13 @@ import { AttentionSensor } from './accessories/attention-sensor.js';
 import { attentionSensorUuid, fastPollingSwitchUuid, triggerUuid } from './accessories/common.js';
 import { FastPollingSwitch } from './accessories/fast-polling-switch.js';
 import { TriggerSensor } from './accessories/trigger-sensor.js';
-import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from './api/peloton-api.js';
-import { type PelotonConfig, parseConfig } from './config.js';
+import { ApiError, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from './api/peloton-api.js';
+import { AuthError, login } from './auth/peloton-auth.js';
+import { type AccountConfig, type PelotonConfig, parseConfig } from './config.js';
 import { Poller, type PollerAccount, type PollerLog, type Scheduler, deviceMapFromDevices } from './poller/poller.js';
 import type { DeviceMap } from './poller/rules.js';
 import { PLATFORM_NAME, PLUGIN_NAME, PLUGIN_VERSION } from './settings.js';
+import { type ConnectDependencies, type LoginFn, connectAccount } from './store/account-connect.js';
 import { type AccountRecord, AccountStore } from './store/account-store.js';
 
 /** Injection points for tests; Homebridge never passes these. */
@@ -22,6 +24,8 @@ export interface PlatformDependencies {
   now?: () => number;
   scheduler?: Scheduler;
   fetchImpl?: typeof fetch;
+  /** Headless login, defaults to the auth module over fetchImpl. */
+  login?: LoginFn;
 }
 
 export class PelotonPlatform implements DynamicPlatformPlugin {
@@ -70,6 +74,7 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
   private async launch(): Promise<void> {
     const config = this.pelotonConfig;
     this.store = new AccountStore({ storagePath: this.api.user.storagePath(), now: this.deps.now, fetchImpl: this.deps.fetchImpl });
+    await this.signInAtStartup(config, await this.store.loadAll());
     const records = await this.store.loadAll();
 
     const accounts = this.selectAccounts(config, records);
@@ -99,9 +104,69 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       now: this.deps.now,
       scheduler: this.deps.scheduler,
       deviceMaps,
+      reconnect: (accountId) => this.reconnect(accountId),
     });
     this.wireEvents(records);
     this.poller.start();
+  }
+
+  /**
+   * Signs in every configured account that has email and password but no usable stored sign-in,
+   * one after another, before polling starts. Accounts with tokens on disk are left alone.
+   */
+  private async signInAtStartup(config: PelotonConfig, records: Map<string, AccountRecord>): Promise<void> {
+    for (const account of config.accounts) {
+      const record = records.get(account.id);
+      if (record?.state === 'connected' && record.accessToken !== undefined && record.refreshToken !== undefined) {
+        continue;
+      }
+      await this.signIn(account, record);
+    }
+  }
+
+  /** One login attempt for an account with credentials. Returns the record on success, undefined otherwise. */
+  private async signIn(account: AccountConfig, record: AccountRecord | undefined): Promise<AccountRecord | undefined> {
+    if (account.email === undefined || account.password === undefined || this.store === undefined) {
+      return undefined;
+    }
+    const displayName = account.displayName ?? record?.displayName ?? record?.username ?? account.id;
+    const fetchImpl = this.deps.fetchImpl;
+    const deps: ConnectDependencies = {
+      store: this.store,
+      api: {
+        getMe: (token) => getMe(token, fetchImpl),
+        getSubscriptions: (userId, token) => getSubscriptions(userId, token, fetchImpl),
+      },
+      login: this.deps.login ?? ((email, password) => login(email, password, fetchImpl, { now: this.deps.now })),
+      now: this.deps.now ?? Date.now,
+    };
+    try {
+      const result = await connectAccount(deps, account.id, account.email, account.password);
+      this.log.info(`Connected ${account.displayName ?? result.record.displayName ?? displayName} (@${result.record.username ?? ''})`);
+      return result.record;
+    } catch (error) {
+      if (error instanceof AuthError) {
+        this.log.info(`${displayName}: sign-in failed at stage ${error.stage}, HTTP ${error.status ?? 'none'}; use the settings page to connect`);
+      } else {
+        const status = error instanceof ApiError ? `HTTP ${error.status}` : error instanceof Error ? error.message : String(error);
+        this.log.warn(`${displayName}: profile fetch after sign-in failed (${status}); the daily check-in will retry`);
+      }
+      return undefined;
+    }
+  }
+
+  /** The poller's one re-login attempt after invalid_grant, for accounts with a password in config. */
+  private async reconnect(accountId: string): Promise<PollerAccount | undefined> {
+    const account = this.pelotonConfig.accounts.find((entry) => entry.id === accountId);
+    if (account === undefined || this.store === undefined) {
+      return undefined;
+    }
+    const record = await this.signIn(account, await this.store.load(accountId));
+    if (record === undefined) {
+      return undefined;
+    }
+    const selected = this.selectAccounts({ ...this.pelotonConfig, accounts: [account] }, new Map([[accountId, record]]));
+    return selected[0];
   }
 
   private shutdown(): void {
