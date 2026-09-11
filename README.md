@@ -4,9 +4,39 @@
 
 Peloton workouts as HomeKit sensors for Homebridge automations. The plugin watches one or more Peloton accounts in a household and exposes trigger sensors that turn on when a workout starts, when it ends, or when a rider reaches a heart-rate zone, so Home app automations can react to what is happening on the bike, the tread, or the mat.
 
-Status: beta, not yet functional as a plugin; build 1 of 4. This build carries the sign-in module, the API wrappers, the account store, fixtures, tests, and a probe script for the first live run. Accessories, polling, and the settings page arrive in later builds.
+Status: beta, build 2 of 4. Works with a hand-edited config.json; the settings page arrives in build 3.
 
 Not affiliated with Peloton Interactive. Uses Peloton's undocumented member API.
+
+## Configuration
+
+Add a platform block to config.json. This example has one account and one Workout trigger; every other value is optional and takes the defaults shown in the comments below the block.
+
+```json
+{
+  "platform": "Peloton",
+  "name": "Peloton",
+  "accounts": [
+    { "id": "a1", "email": "you@example.com", "displayName": "Alex" }
+  ],
+  "triggers": [
+    { "id": "t1", "type": "workout", "name": "Workout", "accessory": "occupancy",
+      "who": "anyone", "activities": [], "device": "any", "holdAfterEnd": 90 }
+  ],
+  "polling": { "fastSwitch": true, "fastSwitchName": "Peloton fast polling", "fastInterval": 10, "standbyInterval": 120 },
+  "advanced": { "fastSwitchAutoOffMinutes": 120, "attentionSensor": false, "dailyCheckIn": "03:00" },
+  "debug": false
+}
+```
+
+- `accounts[].id` and `triggers[].id` identify the account store file and the HomeKit accessory. Keep them stable; the settings page generates them in build 3, and until then any short unique string works. A missing id is generated for the run with a warning.
+- A Workout trigger is on while a matching workout is in progress and for `holdAfterEnd` seconds after it ends. `who` is "anyone" or an account userId, `activities` is empty for all activities or a list such as `["cycling", "running"]`, `device` is "any" or a device id from the household.
+- A heart-rate zone trigger looks like `{ "id": "t2", "type": "hrZone", "name": "Zone 4 or higher", "who": "<userId>", "zone": 4, "holdTime": 20 }` and is on once the rider has been at or above the zone for `holdTime` seconds.
+- `accessory` is "occupancy" (default) or "switch". Both kinds are read-only sensors in effect.
+- `polling.fastInterval` is in seconds with a floor of 5; `standbyInterval` may be 0 for no polling while the Fast polling switch is off.
+- Accounts are connected from the settings page, which arrives in build 3. Until then an account without a stored sign-in is logged as "not connected, not polling" at startup.
+
+The plugin keeps each account's sign-in under `homebridge-peloton/accounts/` in the Homebridge storage folder, in files readable only by the Homebridge user. Delete that folder to remove every stored sign-in.
 
 ## Development
 
