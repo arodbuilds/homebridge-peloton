@@ -869,6 +869,35 @@ describe('daily check-in', () => {
   });
 });
 
+describe('last checked', () => {
+  it('persists lastCheckedAt on every successful poll of the account, list and locked alike, and leaves it on a failure', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, [
+      apiResponse('workouts-empty'), apiResponse('workouts-empty'), jsonResponse(503, {}), apiResponse('workout-in-progress-cycling'),
+    ]).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, undefined);
+    h.poller.start();
+    await h.clock.advance(0);
+    const first = h.clock.now();
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first);
+    await h.clock.advance(120_000);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 120_000);
+    await h.clock.advance(120_000);
+    assert.equal(h.fetch.count(LIST_OWNER), 3);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 120_000, 'a failed poll leaves the last successful time');
+    await h.clock.advance(120_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 360_000);
+    await h.clock.advance(10_000);
+    assert.equal(h.fetch.count(WORKOUT_CYC), 1);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 370_000, 'the locked poll through getWorkout counts too');
+    const record = readRecord(h.store, 'a1');
+    assert.equal(record.refreshToken, 'refresh-1', 'the write keeps the rest of the record');
+    assert.equal(record.state, 'connected');
+    assert.deepEqual(h.lines.warn, []);
+  });
+});
+
 describe('stop', () => {
   it('cancels every timer', async () => {
     const h = await harness();

@@ -604,6 +604,7 @@ export class Poller {
         await this.pollList(runtime);
       }
       runtime.failures = 0;
+      await this.recordChecked(runtime);
     } catch (error) {
       dropped = this.handlePollError(runtime, error) === 'dropped';
     } finally {
@@ -652,6 +653,23 @@ export class Poller {
     if (this.hrTriggersFor(runtime).length > 0) {
       const graph = await this.store.withValidToken(account.id, (token) => this.api.getPerformanceGraph(workoutId, GRAPH_EVERY_N, token));
       this.processSample(runtime, graph);
+    }
+  }
+
+  /**
+   * Persists lastCheckedAt on the account record after every successful poll, so the settings page's
+   * "Last checked" line follows polling (SPEC section 7). A failure to write it is logged at debug
+   * and never counts as a poll failure.
+   */
+  private async recordChecked(runtime: AccountRuntime): Promise<void> {
+    const { account } = runtime;
+    try {
+      const record = await this.store.load(account.id);
+      if (record !== undefined && record.state === 'connected') {
+        await this.store.save(account.id, { ...record, lastCheckedAt: this.now() });
+      }
+    } catch (error) {
+      this.log.debug(`${account.displayName}: could not record the poll time (${error instanceof Error ? error.message : String(error)})`);
     }
   }
 
