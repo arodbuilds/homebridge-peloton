@@ -1,9 +1,12 @@
 name: Publish to npm
 
-# Publishes through npm trusted publishing (OIDC), so no npm token is stored in the repo.
+# The first publish uses the NPM_TOKEN secret, because npm cannot register a trusted
+# publisher for a package that does not exist yet. Later publishes use npm trusted
+# publishing (OIDC): once the package has this workflow registered as a trusted
+# publisher, remove the NPM_TOKEN secret. With the secret absent NODE_AUTH_TOKEN is
+# empty and npm falls back to OIDC, so nothing else in this workflow changes.
 # A GitHub release marked "Latest" publishes to the npm latest tag.
 # A GitHub release marked "Pre-release" publishes to the npm beta tag.
-# The npm package must have this workflow registered as a trusted publisher.
 
 on:
   release:
@@ -49,8 +52,12 @@ jobs:
 
       - name: Publish beta
         if: github.event.release.prerelease
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag beta --provenance --access public
 
       - name: Publish latest
         if: ${{ !github.event.release.prerelease }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag latest --provenance --access public
