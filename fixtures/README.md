@@ -12,6 +12,7 @@ Each JSON file is a response envelope: `status`, `headers` (lower-case names, va
 | --- | --- |
 | authorize-redirect.json | GET /authorize: 302 to the login page with Set-Cookie |
 | login-page.json, login-page.html | The login page: 200 with the CSRF cookie |
+| login-page-lock-bundle.json, login-page-lock-bundle.html | The login page as Universal Login really serves it, with the Lock library and text dictionary whose words look like a verification step |
 | credentials-success.json, credentials-success.html | POST /usernamepassword/login: 200 with the auto-post form |
 | credentials-failure.json | POST /usernamepassword/login: 401 wrong password |
 | verification-required.json, verification-required.html | POST /usernamepassword/login: 200 with a verification step instead of the form |

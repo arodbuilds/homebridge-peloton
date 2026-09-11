@@ -154,9 +154,9 @@ export async function login(
     throw new AuthError('authorize', loginPage.status);
   }
   await dump.write('authorize-login-page', loginPage.body);
-  if (looksLikeVerification(loginPage.body)) {
-    throw new AuthError('verification_required', loginPage.status);
-  }
+  // No verification check here: Universal Login bundles its Lock library and text dictionary, which
+  // contain words such as "passwordless" and "verify your email" for every account. The check runs
+  // on the credentials response, the callback page, and the token error path only.
 
   // 2. POST the credentials as JSON with the CSRF header derived from the cookie Auth0 set.
   const credentialsUrl = new URL(PELOTON_AUTH.credentialsPath, PELOTON_AUTH.tenantUrl);

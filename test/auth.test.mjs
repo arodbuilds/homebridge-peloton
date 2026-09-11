@@ -131,6 +131,20 @@ describe('login', () => {
     assert.equal(challengeFor(exchange.code_verifier), challenge, 'the verifier matches the challenge sent to /authorize');
   });
 
+  it('does not read verification markers in the Lock bundle on the initial login page', async () => {
+    const steps = happyPath();
+    steps[1] = authFixture('login-page-lock-bundle');
+    assert.match(steps[1].body, /passwordless/i);
+    assert.match(steps[1].body, /verify your email/i);
+    assert.match(steps[1].body, /mfa_required/);
+    const fetchImpl = createFakeFetch(steps);
+    const tokens = await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    assert.equal(tokens.accessToken, 'redacted');
+    assert.equal(fetchImpl.requests[2].url, `${PELOTON_AUTH.tenantUrl}${PELOTON_AUTH.credentialsPath}`, 'login proceeded to the credentials POST');
+    assert.equal(fetchImpl.requests[2].headers[PELOTON_AUTH.csrfHeader], 'redacted-csrf', 'the CSRF cookie from that page is still used');
+    assert.equal(fetchImpl.remaining(), 0);
+  });
+
   it('follows several redirects on the tenant and stops at the first one that leaves it', async () => {
     const steps = happyPath();
     steps.splice(3, 1,
