@@ -404,7 +404,7 @@ export function devicesOf(records: Map<string, AccountRecord>): DeviceSummary[] 
   const devices: DeviceSummary[] = [];
   for (const record of records.values()) {
     for (const device of record.devices ?? []) {
-      if (!devices.some((known) => known.id === device.id)) {
+      if (device.name.length > 0 && !devices.some((known) => (known.id || known.name) === (device.id || device.name))) {
         devices.push({ id: device.id, name: device.name });
       }
     }

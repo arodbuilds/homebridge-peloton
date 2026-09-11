@@ -152,6 +152,12 @@ describe('/status', () => {
     assert.equal((await routes['/status']()).accounts.find((a) => a.id === 'a1').lastWorkoutAt, 1789030990 * 1000);
   });
 
+  it('lists every device on the owner record, counting a device without an id by its name', async () => {
+    const devices = [{ id: '', name: 'Blue Door+', deviceType: 'home_bike_plus' }, { id: '', name: 'Tread', deviceType: 'prism' }, { id: 'x', name: '' }];
+    const { routes } = harness({ records: { a1: connected({ devices }) } });
+    assert.deepEqual((await routes['/status']()).devices, [{ id: '', name: 'Blue Door+' }, { id: '', name: 'Tread' }]);
+  });
+
   it('reflects a session that died while asking for the last workout', async () => {
     const { routes, fetch } = harness();
     fetch.route('/api/user/u-owner-0001/workouts', jsonResponse(401, {}));
@@ -181,6 +187,21 @@ describe('/connect', () => {
     assert.equal(JSON.stringify(record).includes('member@example.com'), false);
     assert.equal(store.records.has('u-member-0002'), false, 'the household profile for the same member is removed');
     assert.deepEqual(store.calls.remove, ['u-member-0002']);
+  });
+
+  it('stores the owner\'s devices and named household profiles at connect, and /status lists them', async () => {
+    const { routes, store, fetch } = harness({ records: {}, login: fakeLogin({ 'owner@example.com': TOKENS }) });
+    fetch.route('/api/me', apiResponse('me-owner'));
+    const result = await routes['/connect']({ id: 'a1', email: 'owner@example.com', password: 'secret' });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.account.isOwner, true);
+    assert.equal(result.account.displayName, 'Owner Example');
+    assert.deepEqual(store.records.get('a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    const status = await routes['/status']();
+    assert.deepEqual(status.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0002').displayName, 'Member Example');
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').displayName, 'Lifter Example');
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').avatar, true);
   });
 
   it('maps every login stage to the page error shape with the HTTP status', async () => {
