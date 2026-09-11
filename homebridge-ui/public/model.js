@@ -32,6 +32,24 @@ export const ACTIVITIES = [
 
 export const DEVICES = ['any', 'bike', 'tread'];
 
+/**
+ * How one device from /status reads on the Devices line: its name with the group after it in
+ * brackets ("Blue Door+ (bike)"), the capitalised group alone when the membership has not named it
+ * ("Guide"), and no suffix when the group is empty or equals the name.
+ */
+export function deviceLabel(device) {
+  const group = typeof device.group === 'string' ? device.group : '';
+  if (typeof device.name !== 'string' || device.name.length === 0) {
+    return group.charAt(0).toUpperCase() + group.slice(1);
+  }
+  return group.length > 0 && group !== device.name ? `${device.name} (${group})` : device.name;
+}
+
+/** The comma-separated device list for the Devices line. */
+export function devicesText(devices) {
+  return devices.map(deviceLabel).join(', ');
+}
+
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

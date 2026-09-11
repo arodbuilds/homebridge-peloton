@@ -5,8 +5,8 @@ import { describe, it } from 'node:test';
 
 import { STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry,
-  validate,
+  ACTIVITIES, backupBlock, deviceLabel, devicesText, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig,
+  removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -194,5 +194,21 @@ describe('copy', () => {
       assert.equal(text.includes('—'), false, `${name} has an em dash`);
       assert.equal(/\s--\s/.test(text), false, `${name} has a double dash`);
     }
+  });
+});
+
+describe('devices line', () => {
+  it('labels a device by name with the group after it, by the capitalised group without a name, and without a suffix when they match', () => {
+    assert.equal(deviceLabel({ id: 'dev-bike-0001', name: 'Blue Door+', group: 'bike' }), 'Blue Door+ (bike)');
+    assert.equal(deviceLabel({ id: 'dev-tread-0001', name: 'Tread', group: 'tread' }), 'Tread (tread)');
+    assert.equal(deviceLabel({ id: 'dev-guide-0001', name: null, group: 'guide' }), 'Guide');
+    assert.equal(deviceLabel({ id: 'dev-x', name: 'tread', group: 'tread' }), 'tread');
+    assert.equal(deviceLabel({ id: 'dev-old', name: 'Bike+', group: '' }), 'Bike+', 'a record from an earlier build has no group');
+    assert.equal(deviceLabel({ id: 'dev-old', name: 'Bike+' }), 'Bike+');
+    assert.equal(devicesText([
+      { id: 'dev-bike-0001', name: 'Blue Door+', group: 'bike' },
+      { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+    ]), 'Blue Door+ (bike), Tread (tread), Guide');
   });
 });

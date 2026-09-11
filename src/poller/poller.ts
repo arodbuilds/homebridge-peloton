@@ -475,7 +475,7 @@ export class Poller {
   private async updateHousehold(runtime: AccountRuntime, record: AccountRecord): Promise<void> {
     const { account } = runtime;
     const subscriptions = await this.store.withValidToken(account.id, (token) => this.api.getSubscriptions(account.userId, token));
-    await applyHousehold(this.store, record, subscriptions);
+    await applyHousehold(this.store, record, subscriptions, this.now());
   }
 
   /* ----------------------------------------------------------------------------------------------

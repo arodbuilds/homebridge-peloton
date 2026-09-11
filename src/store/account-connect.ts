@@ -75,7 +75,7 @@ export async function connectWithTokens(deps: Omit<ConnectDependencies, 'login'>
   await claimHouseholdProfile(deps.store, accountId, record.userId);
 
   const subscriptions = await deps.store.withValidToken(accountId, (token) => deps.api.getSubscriptions(me.id, token));
-  const devices = await applyHousehold(deps.store, record, subscriptions);
+  const devices = await applyHousehold(deps.store, record, subscriptions, deps.now());
   await deps.store.save(accountId, record);
   return { record, devices };
 }
@@ -102,8 +102,8 @@ export async function claimHouseholdProfile(store: Pick<ConnectStore, 'load' | '
   return true;
 }
 
-/** "first_name last_name" when the profile carries a name, the username otherwise. */
-function nameOf(profile: { firstName: string; lastName: string; username: string }): string {
+/** "first_name last_name" from /api/me when the profile carries a name, the username otherwise. */
+function nameOf(profile: Me): string {
   return `${profile.firstName} ${profile.lastName}`.trim() || profile.username;
 }
 
@@ -132,49 +132,50 @@ export function applyProfile(record: AccountRecord, me: Me, now: number): Accoun
   return updated;
 }
 
-/** The hardware family behind a device_type code (SPEC section 4.2), shown for a device the membership has not named. */
-const DEVICE_FAMILIES: Record<string, string> = { home_bike: 'Bike', home_bike_plus: 'Bike+', prism: 'Tread' };
-
 /** True for a household profile the owner's subscriptions wrote: never connected, no tokens of its own. */
 function isHouseholdProfile(record: AccountRecord): boolean {
   return record.state === 'not_connected' && record.accessToken === undefined && record.refreshToken === undefined;
 }
 
+/** The key a device is deduplicated by: its id, else its name, else its group. */
+function deviceKey(device: StoredDevice): string {
+  return device.id || device.name || device.group;
+}
+
 /**
  * Settles isOwner from the memberships (owner.id equal to the account's own userId) and, for the
- * owner, writes the household devices onto the record and a not_connected profile for every shared
- * member. Devices are the union across the owned subscriptions, keyed by id, or by name when the
- * entry carries no id. A profile the store already holds is brought up to date with the member's
- * current username, name, and photo; a member's own connected record is never touched. Returns the
- * owner's devices, empty for a member. The caller saves the record.
+ * owner, writes the household devices and householdFetchedAt onto the record and a not_connected
+ * profile for every shared member. Devices are the union across the owned subscriptions, keyed by
+ * id (device_id), or by name and then group when an entry carries none. A profile the store already
+ * holds is brought up to date with the member's current username, name, and photo; a member's own
+ * connected record is never touched. Returns the owner's devices, empty for a member. The caller
+ * saves the record.
  */
 export async function applyHousehold(
   store: Pick<ConnectStore, 'loadAll' | 'save'>,
   record: AccountRecord,
   subscriptions: Subscription[],
+  now: number,
 ): Promise<StoredDevice[]> {
   const userId = record.userId ?? '';
   const owned = subscriptions.filter((subscription) => subscription.ownerId === userId && userId.length > 0);
   record.isOwner = owned.length > 0;
   if (!record.isOwner) {
     delete record.devices;
+    delete record.householdFetchedAt;
     return [];
   }
   const devices: StoredDevice[] = [];
   for (const subscription of owned) {
     for (const device of subscription.attachedDevices) {
-      const name = device.name || (device.deviceType === undefined ? undefined : DEVICE_FAMILIES[device.deviceType]);
-      if (name === undefined || devices.some((known) => (known.id || known.name) === (device.id || name))) {
-        continue;
+      const stored: StoredDevice = { id: device.id, name: device.name, group: device.group };
+      if (!devices.some((known) => deviceKey(known) === deviceKey(stored))) {
+        devices.push(stored);
       }
-      const stored: StoredDevice = { id: device.id, name };
-      if (device.deviceType !== undefined) {
-        stored.deviceType = device.deviceType;
-      }
-      devices.push(stored);
     }
   }
   record.devices = devices;
+  record.householdFetchedAt = now;
 
   const existing = await store.loadAll();
   const known = new Map<string, { key: string; record: AccountRecord }>();
@@ -190,7 +191,7 @@ export async function applyHousehold(
       }
       const profile = {
         username: user.username,
-        displayName: nameOf(user),
+        displayName: user.displayName,
         imageUrl: user.imageUrl,
         isProfileImageDefault: user.isProfileImageDefault,
       };

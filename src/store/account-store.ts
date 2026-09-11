@@ -27,12 +27,14 @@ export interface LastError {
   at: number;
 }
 
-/** An attached device from the owner's subscriptions, kept so the device map survives a restart. */
+/**
+ * An attached device from the owner's subscriptions (SPEC section 7): device_id, device_name (null
+ * for a device the membership has not named, such as the Guide), and device_group (bike, tread, guide).
+ */
 export interface StoredDevice {
   id: string;
-  name: string;
-  /** Hardware model code when the subscriptions call carried device_type. */
-  deviceType?: string;
+  name: string | null;
+  group: string;
 }
 
 export interface AccountRecord {
@@ -51,6 +53,8 @@ export interface AccountRecord {
   isOwner?: boolean;
   /** Household devices, present on the owner's record only. */
   devices?: StoredDevice[];
+  /** Epoch milliseconds of the subscriptions read that last wrote devices and the household profiles; owner only. */
+  householdFetchedAt?: number;
   state: AccountState;
   lastCheckedAt?: number;
   lastError?: LastError;

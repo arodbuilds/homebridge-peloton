@@ -778,7 +778,12 @@ describe('daily check-in', () => {
     assert.equal(owner.maxHr, 168);
     assert.equal(owner.hrZones.length, 5);
     assert.deepEqual(owner.hrZones[3], { zone: 4, min: 143, max: 159 });
-    assert.deepEqual(owner.devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.deepEqual(owner.devices, [
+      { id: 'dev-bike-0001', name: 'Bike+', group: 'bike' },
+      { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+    ]);
+    assert.equal(owner.householdFetchedAt, h.clock.now());
     assert.equal(owner.username, 'owner_rider');
     assert.equal(owner.displayName, 'Owner');
     assert.equal(owner.imageUrl, 'https://cdn.example.invalid/avatars/u-owner-0001.jpg');
@@ -796,7 +801,7 @@ describe('daily check-in', () => {
       username: 'member_runner',
       displayName: 'Member Example',
       imageUrl: 'https://cdn.example.invalid/avatars/default.png',
-      isProfileImageDefault: true,
+      isProfileImageDefault: false,
       state: 'not_connected',
     });
 
@@ -846,9 +851,14 @@ describe('daily check-in', () => {
     const profile = await h.store.load('u-member-0002');
     assert.equal(profile.displayName, 'Member Example');
     assert.equal(profile.imageUrl, 'https://cdn.example.invalid/avatars/default.png');
-    assert.equal(profile.isProfileImageDefault, true);
+    assert.equal(profile.isProfileImageDefault, false);
     assert.equal(profile.state, 'not_connected');
-    assert.deepEqual(readRecord(h.store, 'a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.deepEqual(readRecord(h.store, 'a1').devices, [
+      { id: 'dev-bike-0001', name: 'Bike+', group: 'bike' },
+      { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+    ]);
+    assert.equal(readRecord(h.store, 'a1').householdFetchedAt, h.clock.now());
     assert.equal(readRecord(h.store, 'a1').lastCheckedAt, h.clock.now());
   });
 

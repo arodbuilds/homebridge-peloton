@@ -102,7 +102,7 @@ const CONFIG = {
 async function launch({ config = CONFIG, cached = [], records, fetch = createRoutedFetch(), login } = {}) {
   const clock = createFakeClock();
   const store = await seedStore(clock, records ?? {
-    a1: connected('u-owner-0001', 'Owner', { isOwner: true, devices: [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }] }),
+    a1: connected('u-owner-0001', 'Owner', { isOwner: true, devices: [{ id: 'dev-bike-0001', name: 'Bike+', group: 'bike' }] }),
     a2: { state: 'reconnect_needed', userId: 'u-member-0003', displayName: 'Lifter', username: 'member_lifter' },
     a3: { state: 'not_connected', userId: 'u-member-0002', displayName: 'Member' },
   });
@@ -263,7 +263,12 @@ describe('startup sign-in', () => {
     assert.equal(owner.maxHr, 168);
     assert.equal(owner.hrZones.length, 5);
     assert.equal(owner.isOwner, true);
-    assert.deepEqual(owner.devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.deepEqual(owner.devices, [
+      { id: 'dev-bike-0001', name: 'Bike+', group: 'bike' },
+      { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+    ]);
+    assert.equal(owner.householdFetchedAt, clock.now());
     const member = await store.load('a2');
     assert.equal(member.state, 'connected');
     assert.equal(member.userId, 'u-member-0002');
