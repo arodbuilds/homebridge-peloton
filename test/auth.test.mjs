@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ import {
   browserStart,
   login,
   parseForm,
+  parseLoginPageConfig,
   redactFormValues,
   refresh,
 } from '../dist/auth/peloton-auth.js';
@@ -54,10 +56,34 @@ function challengeFor(verifier) {
   return createHash('sha256').update(verifier).digest('base64url');
 }
 
+/** Encodes text the way the login page carries injectedConfig: base64 of UTF-8. */
+function base64(text) {
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+/** An injectedConfig line for the given JSON value, as it appears in the login page. */
+function configLine(value) {
+  return `window.injectedConfig = window.injectedConfig || "${base64(JSON.stringify(value))}";`;
+}
+
+/** The login page fixture with its injectedConfig JSON replaced by the given value (a string is used as is). */
+function loginPageWithConfig(value) {
+  const page = authFixture('login-page');
+  const encoded = typeof value === 'string' ? value : base64(JSON.stringify(value));
+  page.body = page.body.replace(/(window\.injectedConfig \|\| ")[^"]*(")/, `$1${encoded}$2`);
+  return page;
+}
+
+/** The decoded injectedConfig of the login page fixture, before the fake fetch substitutes placeholders. */
+function fixtureConfig() {
+  return parseLoginPageConfig(authFixture('login-page').body);
+}
+
 describe('login', () => {
   it('drives the headless flow and returns tokens', async () => {
     const fetchImpl = createFakeFetch(happyPath());
-    const tokens = await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    const targets = [];
+    const tokens = await login('rider@example.com', 'hunter2', fetchImpl, { now, onLoginPage: (target) => targets.push(target) });
 
     assert.deepEqual(tokens, { accessToken: 'redacted', refreshToken: 'redacted', expiresAt: NOW + 172_800_000 });
     assert.equal(fetchImpl.remaining(), 0);
@@ -94,21 +120,33 @@ describe('login', () => {
     assert.equal(credentials.headers[PELOTON_AUTH.csrfHeader], 'redacted-csrf');
     assert.match(credentials.headers.cookie, /_csrf=redacted-csrf/);
     assert.match(credentials.headers.cookie, /auth0=redacted-session/);
+    const pageConfig = fixtureConfig();
     const body = jsonBody(credentials);
     assert.equal(body.client_id, PELOTON_AUTH.clientId);
+    assert.equal(body.redirect_uri, pageConfig.callbackURL);
     assert.equal(body.redirect_uri, PELOTON_AUTH.redirectUri);
+    assert.equal(body.tenant, pageConfig.auth0Tenant);
+    assert.equal(body.tenant, 'peloton-prod');
     assert.equal(body.tenant, PELOTON_AUTH.tenant);
+    assert.equal(body.connection, 'pelo-user-password');
+    assert.equal(body.connection, PELOTON_AUTH.connection);
     assert.equal(body.response_type, 'code');
     assert.equal(body.scope, PELOTON_AUTH.scope);
     assert.equal(body.audience, PELOTON_AUTH.audience);
-    assert.equal(body.state, state);
+    assert.equal(body.protocol, 'oauth2');
+    assert.equal(body._intstate, 'deprecated');
+    assert.equal(body.state, pageConfig.internalOptions.state, 'the body carries the transaction state from the page');
+    assert.equal(body.state.length, 160);
+    assert.notEqual(body.state, state, 'not the state from the authorize URL');
     assert.equal(body.nonce, nonce);
-    assert.equal(body.connection, PELOTON_AUTH.connection);
     assert.equal(body.code_challenge, challenge);
     assert.equal(body.code_challenge_method, 'S256');
     assert.equal(body.username, 'rider@example.com');
     assert.equal(body.password, 'hunter2');
-    assert.equal(body._csrf, 'redacted-csrf');
+    assert.equal(body._csrf, 'redacted-page-csrf', 'the body _csrf comes from the page config, not the cookie');
+    const expectedKeys = [...Object.keys(pageConfig.internalOptions), 'client_id', 'redirect_uri', 'tenant', 'connection', 'username', 'password'].sort();
+    assert.deepEqual(Object.keys(body).sort(), expectedKeys, 'every internalOptions key is sent and nothing else is added');
+    assert.deepEqual(targets, [{ auth0Domain: 'auth.onepeloton.com', auth0Tenant: 'peloton-prod', connection: 'pelo-user-password' }]);
 
     assert.equal(callback.method, 'POST');
     assert.equal(callback.url, `${PELOTON_AUTH.tenantUrl}/login/callback`);
@@ -145,6 +183,84 @@ describe('login', () => {
     assert.equal(fetchImpl.remaining(), 0);
   });
 
+  it('sends the x-csrf-token header only when the _csrf cookie exists and keeps the body _csrf from the page', async () => {
+    const steps = happyPath();
+    steps[1] = { ...authFixture('login-page'), headers: { 'content-type': 'text/html; charset=utf-8' } };
+    const fetchImpl = createFakeFetch(steps);
+    await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    const credentials = fetchImpl.requests[2];
+    assert.equal(credentials.headers[PELOTON_AUTH.csrfHeader], undefined);
+    assert.equal(jsonBody(credentials)._csrf, 'redacted-page-csrf');
+  });
+
+  it('maps a login page without injectedConfig to stage authorize without posting credentials', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      htmlResponse(200, '<html><head><title>Log in | Peloton</title></head><body><div class="auth0-lock-container"></div></body></html>'),
+    ]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 200);
+    assert.equal(fetchImpl.requests.length, 2, 'no credentials POST was made');
+  });
+
+  it('maps a login page whose injectedConfig is not base64 to stage authorize', async () => {
+    const fetchImpl = createFakeFetch([authFixture('authorize-redirect'), loginPageWithConfig('not base64 at all!')]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 200);
+    assert.equal(fetchImpl.requests.length, 2);
+  });
+
+  it('maps a login page whose injectedConfig is not JSON to stage authorize', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      loginPageWithConfig(base64('window.injectedConfig = {')),
+    ]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 200);
+    assert.equal(fetchImpl.requests.length, 2);
+  });
+
+  it('maps a login page whose injectedConfig lacks internalOptions to stage authorize', async () => {
+    const { internalOptions, ...rest } = fixtureConfig();
+    assert.ok(internalOptions);
+    const fetchImpl = createFakeFetch([authFixture('authorize-redirect'), loginPageWithConfig(rest)]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 200);
+    assert.equal(fetchImpl.requests.length, 2);
+  });
+
+  it('maps a page config whose code_challenge is not ours to state_mismatch without posting credentials', async () => {
+    const config = fixtureConfig();
+    config.internalOptions.nonce = '{{nonce}}';
+    config.internalOptions.code_challenge = 'someone-elses-challenge';
+    const fetchImpl = createFakeFetch([authFixture('authorize-redirect'), loginPageWithConfig(config)]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'state_mismatch', 200);
+    assert.equal(fetchImpl.requests.length, 2);
+  });
+
+  it('maps a page config whose nonce is not ours to state_mismatch without posting credentials', async () => {
+    const config = fixtureConfig();
+    config.internalOptions.nonce = 'someone-elses-nonce';
+    config.internalOptions.code_challenge = '{{code_challenge}}';
+    const fetchImpl = createFakeFetch([authFixture('authorize-redirect'), loginPageWithConfig(config)]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'state_mismatch', 200);
+    assert.equal(fetchImpl.requests.length, 2);
+  });
+
+  it('passes every internalOptions key through to the credentials POST, including ones it does not know', async () => {
+    const config = fixtureConfig();
+    config.internalOptions.nonce = '{{nonce}}';
+    config.internalOptions.code_challenge = '{{code_challenge}}';
+    config.internalOptions.future_key = 'future value';
+    config.auth0Tenant = 'peloton-staging';
+    config.callbackURL = 'https://members.onepeloton.com/callback-staging';
+    const steps = happyPath();
+    steps[1] = loginPageWithConfig(config);
+    const fetchImpl = createFakeFetch(steps);
+    await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    const body = jsonBody(fetchImpl.requests[2]);
+    assert.equal(body.future_key, 'future value');
+    assert.equal(body.tenant, 'peloton-staging');
+    assert.equal(body.redirect_uri, 'https://members.onepeloton.com/callback-staging');
+    assert.equal(body.connection, PELOTON_AUTH.connection);
+  });
+
   it('follows several redirects on the tenant and stops at the first one that leaves it', async () => {
     const steps = happyPath();
     steps.splice(3, 1,
@@ -178,6 +294,25 @@ describe('login', () => {
     const error = await expectAuthError(login('a@example.com', 'wrong', fetchImpl, { now }), 'credentials', 401, 'invalid_user_password');
     assert.doesNotMatch(error.message, /Wrong email/, 'the response body never reaches the error');
     assert.doesNotMatch(error.message, /wrong/, 'the password never reaches the error');
+  });
+
+  it('maps 403 AnomalyDetected "Invalid state" on the credentials POST to stage authorize, not credentials', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      authFixture('login-page'),
+      authFixture('credentials-anomaly'),
+    ]);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 403, 'access_denied');
+    assert.doesNotMatch(error.message, /Invalid state/, 'the response body never reaches the error');
+  });
+
+  it('still maps access_denied to stage credentials when the description says wrong password', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      authFixture('login-page'),
+      jsonResponse(403, { code: 'access_denied', description: 'Wrong email or password.', statusCode: 403 }),
+    ]);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'credentials', 403, 'access_denied');
   });
 
   it('maps a non-credential failure on the credentials POST to stage authorize', async () => {
@@ -474,6 +609,62 @@ describe('CookieJar', () => {
   });
 });
 
+describe('parseLoginPageConfig', () => {
+  it('reads the fixture: tenant, callback, client, and every internalOptions key', () => {
+    const config = parseLoginPageConfig(authFixture('login-page').body);
+    assert.equal(config.auth0Domain, 'auth.onepeloton.com');
+    assert.equal(config.auth0Tenant, 'peloton-prod');
+    assert.equal(config.callbackURL, 'https://members.onepeloton.com/callback');
+    assert.equal(config.clientID, PELOTON_AUTH.clientId);
+    assert.deepEqual(Object.keys(config.internalOptions).sort(), [
+      '_csrf', '_intstate', 'audience', 'code_challenge', 'code_challenge_method', 'nonce', 'protocol', 'response_type', 'scope', 'state',
+    ]);
+    assert.equal(config.internalOptions.state.length, 160);
+    assert.equal(config.internalOptions._csrf, 'redacted-page-csrf');
+    assert.equal(config.internalOptions._intstate, 'deprecated');
+    assert.equal(config.internalOptions.protocol, 'oauth2');
+    assert.equal(config.internalOptions.response_type, 'code');
+    assert.equal(config.internalOptions.scope, PELOTON_AUTH.scope);
+    assert.equal(config.internalOptions.audience, PELOTON_AUTH.audience);
+  });
+
+  it('reads the lock bundle fixture the same way', () => {
+    const config = parseLoginPageConfig(authFixture('login-page-lock-bundle').body);
+    assert.equal(config.auth0Tenant, 'peloton-prod');
+    assert.equal(config.internalOptions.state.length, 160);
+  });
+
+  it('decodes UTF-8 inside the base64 the way decodeURIComponent(escape(atob())) does', () => {
+    const config = { ...fixtureConfig(), dict: { signin: { title: 'Pelot\u00f6n \u2192 Ride' } } };
+    const parsed = parseLoginPageConfig(`<script>${configLine(config)}</script>`);
+    assert.equal(parsed.auth0Tenant, 'peloton-prod');
+    assert.equal(parsed.internalOptions.state, config.internalOptions.state);
+  });
+
+  it('accepts single quotes and extra whitespace around the assignment', () => {
+    const encoded = base64(JSON.stringify(fixtureConfig()));
+    const parsed = parseLoginPageConfig(`window.injectedConfig   =  window.injectedConfig  ||  '${encoded}'`);
+    assert.equal(parsed.auth0Tenant, 'peloton-prod');
+  });
+
+  const minimal = { auth0Domain: 'auth.onepeloton.com', auth0Tenant: 'peloton-prod', callbackURL: 'https://members.onepeloton.com/callback', clientID: 'x' };
+  for (const [label, html] of [
+    ['a page without the line', '<html><body><script>var config = {};</script></body></html>'],
+    ['an empty string value', 'window.injectedConfig = window.injectedConfig || "";'],
+    ['a value that is not base64', 'window.injectedConfig = window.injectedConfig || "not base64 at all!";'],
+    ['base64 of text that is not JSON', `window.injectedConfig = window.injectedConfig || "${base64('{ nope')}";`],
+    ['base64 of a JSON string', configLine('just a string')],
+    ['a config without internalOptions', configLine(minimal)],
+    ['internalOptions without a state', configLine({ ...minimal, internalOptions: { nonce: 'n' } })],
+    ['a config without auth0Tenant', configLine({ ...minimal, auth0Tenant: undefined, internalOptions: { state: 's' } })],
+    ['a config without callbackURL', configLine({ ...minimal, callbackURL: undefined, internalOptions: { state: 's' } })],
+  ]) {
+    it(`returns undefined for ${label}`, () => {
+      assert.equal(parseLoginPageConfig(html), undefined);
+    });
+  }
+});
+
 describe('parseForm', () => {
   it('reads the action and every hidden input by name, including unknown extras', () => {
     const html = `
@@ -503,7 +694,8 @@ describe('parseForm', () => {
     const form = parseForm(authFixture('credentials-success').body);
     assert.equal(form.action, 'https://auth.onepeloton.com/login/callback');
     assert.deepEqual(Object.keys(form.fields).sort(), ['wa', 'wctx', 'wresult']);
-    assert.equal(JSON.parse(form.fields.wctx).tenant, 'peloton');
+    assert.equal(JSON.parse(form.fields.wctx).tenant, 'peloton-prod');
+    assert.equal(JSON.parse(form.fields.wctx).connection, 'pelo-user-password');
   });
 
   it('returns undefined when there is no form with an action', () => {
