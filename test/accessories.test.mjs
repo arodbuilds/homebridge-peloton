@@ -10,7 +10,7 @@ import { FastPollingSwitch } from '../dist/accessories/fast-polling-switch.js';
 import { TriggerSensor } from '../dist/accessories/trigger-sensor.js';
 
 const { Accessory, Characteristic, Service } = hap;
-const VERSION = '1.0.0-beta.1';
+const VERSION = '0.1.0-beta.1';
 
 function accessory(name, uuid) {
   return new Accessory(name, uuid);

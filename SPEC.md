@@ -1,6 +1,6 @@
 # homebridge-peloton SPEC
 
-Version: draft 3 for 1.0.0-beta.1 (11 September 2026, after build 3 and its two Chrome passes on the Pi)
+Version: draft 4 for 0.1.0-beta.1 (11 September 2026, after build 4 and the last Chrome pass on the Pi)
 Status: source of truth for the build. design/README.md is normative for the settings page layout, copy, and states; this document is normative for everything else. Where the two disagree, this document wins and the design README gets a clarification in the same PR.
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ Not affiliated with Peloton Interactive. Uses Peloton's undocumented member API.
 7. Attention needed sensor: off by default, under Advanced.
 8. The auth layer is owned by this plugin, isolated in one module, with zero runtime dependencies beyond @homebridge/plugin-ui-utils.
 9. Copy rules: no em dashes, sentence case, "sensor" for triggers, "switch" only for the Fast polling switch and the Switch accessory kind.
-10. Beta first: 1.0.0-beta.1 to the npm beta tag, tested on Alex's Pi, then a tester call, then 1.0.0.
+10. Beta first: 0.1.0-beta.1 to the npm beta tag (the version homebridge-notify-switch started at), tested on Alex's Pi, then a tester call, then 1.0.0.
 
 ## 3. Runtime and toolchain
 
@@ -278,6 +278,8 @@ Startup sign-in: on didFinishLaunching, before polling starts, the platform runs
 
 Owner detection: the owner is the account whose getSubscriptions returns a membership with owner.id equal to its own userId; isOwner is set from that, never from config order.
 
+Page-side host contract: the Homebridge UI wraps the page in its own document inside a modal iframe and sizes the iframe to document.body.scrollHeight (plus 10 px) whenever the plugin-ui-utils client posts it. The page keeps html and body at margin 0 and overflow hidden, so no margin collapses out of that measure and the iframe never scrolls on its own, and calls the client's fixScrollHeight after every section render and every summary box change; a host without it is left alone. The host's dark themes grey every .btn-link with an important rule, so the page's link buttons and the callout link carry a scoped rule of the same weight in the page's link colour, Cancel and the help toggle in the secondary colour, Remove in the danger colour (design/README.md, Clarifications from build 4).
+
 Page-side account state: the page shows one card per config account (with the store's summary when there is one) and one per store record config does not name, in that order; a household profile connected from the page gets a config entry with a generated id, and the server removes the profile file. The Checking pill shows while a card's request is in flight. Ids for accounts and triggers are generated on the page (6) and are never shown.
 
 ## 11. Logging
@@ -315,19 +317,29 @@ The settings UI server process logs nothing; its failures reach the page as stag
 - Poller tests use the injectable clock and scheduler and a route-based fake fetch, with the real account store in a temporary directory and the real API wrappers, and cover: standby with 0 and 120 s, scanning stagger, lock-on, locked polling through getWorkout rather than the list, a synced import mid-workout, stacked classes with hold, switch off during locked, auto-off timer anchoring, HR dwell on and off, stale samples, 401 then refresh, invalid_grant to reconnect_needed with the attention event, backoff on 5xx, and the daily check-in.
 - Rules tests cover every matching path in 8.3. Config tests cover every default, clamp, and generated id in 6. Accessory tests cover the service swap, the acknowledged write, and UUID stability with hap-nodejs objects; platform tests cover registration, orphan cleanup, skip lines, and event wiring with a fake Homebridge API.
 - Store tests cover atomic write and rotation.
-- Schema tests compile config.schema.json with ajv (a dev dependency) and check the section 6 sample, the defaults, and every constraint in 6. UI server tests run the handlers against an in-memory fake store and a routed fake fetch: every request in 10, every stage mapping, the household profile claim, browser start and finish through the real PKCE exchange including expiry, the avatar 204 path and cache, the last workout time, and the one-hour household refresh on /status (a stale or missing householdFetchedAt reads once and then serves the store for an hour, a failed read keeps the stored household, a member is never asked). The API tests parse the live-shaped subscriptions fixture, a null device_name, a missing device_group, and a member without a name. The page model (homebridge-ui/public/model.js) is imported into node:test for the account write-back, trigger defaults, validation messages, the copy rules, and the Devices line labels, and the page suite renders the Devices line with a device that has no name; the page itself is checked by hand in the Homebridge UI.
+- Schema tests compile config.schema.json with ajv (a dev dependency) and check the section 6 sample, the defaults, and every constraint in 6. UI server tests run the handlers against an in-memory fake store and a routed fake fetch: every request in 10, every stage mapping, the household profile claim, browser start and finish through the real PKCE exchange including expiry, the avatar 204 path and cache, the last workout time, and the one-hour household refresh on /status (a stale or missing householdFetchedAt reads once and then serves the store for an hour, a failed read keeps the stored household, a member is never asked). The API tests parse the live-shaped subscriptions fixture, a null device_name, a missing device_group, and a member without a name. The page model (homebridge-ui/public/model.js) is imported into node:test for the account write-back, trigger defaults, validation messages, the copy rules, and the Devices line labels, and the page suite renders the Devices line with a device that has no name, checks that the page asks the host to size the iframe after every render, and covers the prefilled trigger names (a new Workout card named "Workout", a new Heart-rate zone card named "Zone 4 or higher" whose name follows the zone until edited). Layout, scrolling, and theme colours are checked in headless Chromium with the host's stylesheet and body classes (the harness is not in the repository); the page itself is also checked by hand in the Homebridge UI.
 - Live verification is manual on the Pi with the probe in this repository (dist/scripts/auth-probe.mjs); peloton-test/p.mjs remains the record of the original capture. Then one real ride with the fast polling switch on.
 
 ## 14. Release
 
-- 1.0.0-beta.1 to the npm beta tag through the GitHub release workflow (pre-release). Keywords include homebridge-plugin, supports-hap, peloton.
-- README: regenerated banner with the round-two tagline, setup in two steps, the fast polling automation recipe, browser sign-in instructions with the Back-button and history alternatives, privacy section, not-affiliated line.
-- CHANGELOG from beta.1.
+- 0.1.0-beta.1 to the npm beta tag through the GitHub release workflow: a GitHub release marked pre-release publishes with `npm publish --tag beta --provenance`, a release marked latest to the latest tag. The workflow checks that the release tag matches package.json. Keywords: homebridge-plugin, homebridge, supports-hap, peloton, homekit, workout, heart-rate, fitness. The plugin icon is not a package.json field: the Homebridge UI takes icons from its central plugin list, which is settled at verification.
+- README (build 4): the banner with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones.", a one-paragraph purpose, the not-affiliated line, requirements (Homebridge 1.8 or 2.x, Node 20 or later, a Peloton membership), install, the setup walkthrough with the five settings page screenshots under assets/screenshots/, browser sign-in with the Back-button and history alternatives, how it works, privacy and what is stored where, troubleshooting, development, credits, and the status line "Beta. Please report what works and what does not." The hand-edited config.json appendix is gone; the README points at section 6 and config.schema.json instead.
+- CHANGELOG from beta.1, grouped Added, Changed, Fixed.
 - Verification submission only after 1.0.0 and a soak.
 
 ## 15. Open items to settle during beta
 
-1. Whether Auth0 presents a verification-code step on any household account; if so, verification_required detection needs a fixture.
+Only what is still open after 0.1.0-beta.1. Everything settled in builds 1 to 4 is in the body, with the notes in section 16.
+
+1. The Guide's platform code. Device matching (8.3) knows home_bike and home_tread from the Pi rides; a Guide workout's platform has not been observed, so a Guide session matches only device "any" until a poll line at debug shows its code and 8.3 gains it.
+2. Whether Auth0 presents a verification-code step on any household account; if so, verification_required detection needs a fixture, and the settings page message for that stage gets its first real test.
+3. Row hardware. The Row's device_type and platform codes have not been observed (no Row on the test membership), so the Device field stays at any, bike, and tread, and a Row workout matches only "any" until the codes are known.
+
+## 16. Clarification notes
+
+Each build's clarifications to this document, kept so a reader can see what changed and why. None changes the decisions in section 2.
+
+### Builds 1 to 3
 
 Resolved during builds 1 to 3 and folded into the body: workouts carry no device id field (4.2, 8.3); performance_graph zone bounds, seconds_since_pedaling_start, and empty customized_heart_rate_zones (4.2, 8.3); the Auth0 tenant, connection, CSRF handling, redirect chain, and login page config (4.1); /api/me last_workout_at is stale (4.2, 10); start latency was within one fast interval on both Pi rides (4.2); the device_type and platform codes of the Bike+, the Tread, and an Apple Health import are in the table in 4.2, and device matching compares the platform, so the device_type map and the "device filtering is unavailable" path are gone (6, 8.3, 11). The build 2 clarifications (config parsing in src/config.ts, the released state, the poller events and backoff, the connect flow module, the check-in rules, the UUID seeds, the log lines, hap-nodejs in tests) live in their sections.
 
@@ -362,3 +374,14 @@ From the second pass through the settings page in Chrome on the Pi, with the liv
 - 10: /status re-reads the owner's membership first when householdFetchedAt is missing or older than one hour, and swallows a failure there; devices[] carries id, name or null, and group.
 - 13: the API, UI server, page model, and page suites named above.
 - design/README.md: the Devices line reads each device as its name with its group in brackets after it, the capitalised group alone for a device without a name (listed there under Clarifications from the second Chrome pass).
+
+### Build 4 clarifications
+
+From the last Chrome pass through the settings page on the Pi, and the release preparation. Each is a clarification, not a change to section 2.
+
+- 10: the page's contract with the host for the iframe height (fixScrollHeight after every render, html and body at margin 0 and overflow hidden) and the scoped link colour for the host's dark themes.
+- 13: the page suite covers the resize calls and the prefilled trigger names; layout and colours are checked in headless Chromium against the host stylesheet.
+- 14: the release workflow, keywords, README contents, and the plugin icon as the Homebridge UI resolves it.
+- 15: only the open items after beta.1 remain there (the Guide platform code, verification-required accounts, Row hardware); the clarification notes moved to this section.
+- design/README.md: new trigger cards start with the Name prefilled and a zone card's name follows the zone until edited; the banner is regenerated; the iframe height and dark theme link colour clarifications (listed there under Clarifications from build 4).
+- 2 and 14: the first beta is 0.1.0-beta.1, the version homebridge-notify-switch started at, not 1.0.0-beta.1; 1.0.0 stays the goal after the tester call.

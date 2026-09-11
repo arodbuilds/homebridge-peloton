@@ -14,6 +14,8 @@ const dom = installFakeDom();
 const requests = [];
 const answers = new Map();
 const pushed = [];
+/** How often the page asked the host to size the iframe to the content (fixScrollHeight). */
+const resizes = { count: 0 };
 dom.window.homebridge = {
   request: async (path, payload = {}) => {
     requests.push({ path, payload });
@@ -29,6 +31,9 @@ dom.window.homebridge = {
   toast: { error: () => undefined, success: () => undefined },
   enableSaveButton: () => undefined,
   disableSaveButton: () => undefined,
+  fixScrollHeight: () => {
+    resizes.count += 1;
+  },
 };
 
 // The page modules read window and document at call time; they are imported once the fake DOM is in place.
@@ -58,7 +63,7 @@ const STATUS = {
     { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
     { id: 'dev-guide-0001', name: null, group: 'guide' },
   ],
-  version: '1.0.0-beta.1',
+  version: '0.1.0-beta.1',
 };
 
 /** Builds the page for a platform block and the given /status answer, as start() does after getPluginConfig and /status. */
@@ -160,6 +165,70 @@ describe('ids over plain http', () => {
       assert.match(page.accountsUi.panel.accountId, UUID);
       assert.equal(root.querySelectorAll('.ns-standalone-panel').length, 1);
     });
+  });
+});
+
+describe('new trigger names', () => {
+  function addTrigger(root, tileName) {
+    buttonNamed(root, 'Add trigger').click();
+    [...root.querySelectorAll('.ns-chooser-tile')].find((tile) => tile.querySelector('.ns-tile-name').textContent === tileName).click();
+  }
+
+  it('prefills Workout on a new Workout card', () => {
+    const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    addTrigger(root, 'Workout');
+    const card = root.querySelector('.ns-trigger-card');
+    assert.equal(page.config.triggers[0].name, 'Workout');
+    assert.equal(card.querySelector('[data-path$=".name"] input').value, 'Workout');
+    assert.equal(card.querySelector('[data-path$=".name"] input').getAttribute('placeholder'), null);
+    assert.equal(card.querySelector('.ns-card-title').textContent, 'Workout');
+  });
+
+  it('prefills Zone 4 or higher on a new Heart-rate zone card and follows the zone until the name is edited', () => {
+    const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    addTrigger(root, 'Heart-rate zone');
+    const card = root.querySelector('.ns-trigger-card');
+    const name = card.querySelector('[data-path$=".name"] input');
+    const zone = card.querySelector('[data-path$=".zone"] select');
+    assert.equal(name.value, 'Zone 4 or higher');
+    assert.equal(page.config.triggers[0].who, 'u-owner-0001', 'the first connected member is preselected');
+
+    zone.value = '3';
+    zone.dispatchEvent('change');
+    assert.equal(page.config.triggers[0].name, 'Zone 3 or higher');
+    assert.equal(name.value, 'Zone 3 or higher');
+    assert.equal(card.querySelector('.ns-card-title').textContent, 'Zone 3 or higher');
+    assert.equal(pushedBlock().triggers[0].name, 'Zone 3 or higher');
+
+    name.value = 'Sprint';
+    name.dispatchEvent('input');
+    zone.value = '5';
+    zone.dispatchEvent('change');
+    assert.equal(page.config.triggers[0].name, 'Sprint', 'an edited name is left alone');
+    assert.equal(name.value, 'Sprint');
+    assert.equal(page.config.triggers[0].zone, 5);
+  });
+});
+
+describe('iframe height', () => {
+  it('asks the host to size the iframe after every render and after the summary box changes', () => {
+    resizes.count = 0;
+    const { page } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }], triggers: [{ id: 't1', type: 'workout', name: 'Workout' }] });
+    assert.ok(resizes.count >= 1, 'renderAll asks once the page is built');
+
+    resizes.count = 0;
+    page.rerender('triggers', false);
+    assert.equal(resizes.count, 1, 'a section render without revalidation asks once');
+
+    resizes.count = 0;
+    page.rerender('triggers');
+    assert.equal(resizes.count, 1, 'a section render with revalidation asks once, from revalidate');
+
+    resizes.count = 0;
+    page.config.triggers[0].name = '';
+    page.touched.add('triggers[0].name');
+    page.revalidate();
+    assert.equal(resizes.count, 1, 'the summary box appearing asks again');
   });
 });
 

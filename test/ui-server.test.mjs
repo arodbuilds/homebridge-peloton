@@ -93,7 +93,7 @@ function harness({ records = { a1: connected(), 'u-member-0002': PROFILE }, logi
     auth: { login, browserStart, browserFinish: (url, verifier, state) => browserFinish(url, verifier, state, fetch, { now: clock.now }) },
     fetchImpl: fetch,
     now: clock.now,
-    version: '1.0.0-beta.1',
+    version: '0.1.0-beta.1',
   });
   return { handlers, store, fetch, clock, login, routes: handlers.routes() };
 }
@@ -128,7 +128,7 @@ describe('/status', () => {
     const { routes, fetch } = harness();
     const result = await routes['/status']();
     assert.equal(result.ok, true);
-    assert.equal(result.version, '1.0.0-beta.1');
+    assert.equal(result.version, '0.1.0-beta.1');
     assert.deepEqual(result.devices, FIXTURE_DEVICES);
     const owner = result.accounts.find((account) => account.id === 'a1');
     assert.deepEqual(owner, {

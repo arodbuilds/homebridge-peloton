@@ -273,24 +273,34 @@ export function exportConfigWithoutPasswords(config, summaries = []) {
   return block;
 }
 
-/** A new trigger as the Add chooser creates it: every field at its default, the name empty. */
+/** The name a trigger starts with (design/README.md): "Workout", or "Zone {n} or higher" for the zone it watches. */
+export function defaultTriggerName(type, zone = DEFAULTS.zone) {
+  return type === 'hrZone' ? `Zone ${zone} or higher` : DEFAULTS.triggerNames.workout;
+}
+
+/**
+ * A new trigger as the Add chooser creates it: every field at its default and the Name prefilled.
+ * A zone trigger's name follows the chosen zone (nameFollowsZone, a page-side flag the export never
+ * writes) until the user edits the name.
+ */
 export function newTrigger(type, defaultWho) {
-  const base = { id: newId(), type, name: '', accessory: 'occupancy' };
+  const base = { id: newId(), type, name: defaultTriggerName(type), accessory: 'occupancy' };
   if (type === 'hrZone') {
-    return { ...base, who: defaultWho ?? '', zone: DEFAULTS.zone, holdTime: DEFAULTS.holdTime };
+    return { ...base, who: defaultWho ?? '', zone: DEFAULTS.zone, holdTime: DEFAULTS.holdTime, nameFollowsZone: true };
   }
   return { ...base, who: 'anyone', activities: [...ACTIVITIES], device: 'any', holdAfterEnd: DEFAULTS.holdAfterEnd };
 }
 
-/** A copy of a trigger with a new id and "{name} copy" (numbered when that name is taken too). */
+/** A copy of a trigger with a new id and "{name} copy" (numbered when that name is taken too). The copy's name is its own. */
 export function duplicateTrigger(trigger, existingNames, copySuffix) {
   const taken = new Set(existingNames.map((name) => name.trim().toLowerCase()));
-  const baseName = trigger.name.trim() || DEFAULTS.triggerNames[trigger.type];
+  const baseName = trigger.name.trim() || defaultTriggerName(trigger.type, trigger.zone);
   let name = `${baseName}${copySuffix}`;
   for (let n = 2; taken.has(name.toLowerCase()); n += 1) {
     name = `${baseName}${copySuffix} ${n}`;
   }
   const copy = { ...trigger, id: newId(), name };
+  delete copy.nameFollowsZone;
   if (copy.activities) {
     copy.activities = [...copy.activities];
   }

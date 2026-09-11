@@ -7,7 +7,7 @@ import { TRIGGERS } from './copy.js';
 import {
   badge, clear, dangerLinkButton, el, focusField, helpText, inlineConfirm, linkButton, numberField, primaryButton, radioField, selectField, textField,
 } from './dom.js';
-import { ACTIVITIES, DEVICES, duplicateTrigger, newTrigger, triggerTitle } from './model.js';
+import { ACTIVITIES, DEVICES, defaultTriggerName, duplicateTrigger, newTrigger, triggerTitle } from './model.js';
 
 export function renderTriggers(app, container) {
   const ui = app.triggersUi;
@@ -137,10 +137,13 @@ function renderCard(app, trigger, index) {
     app.changed();
   };
 
-  grid.appendChild(textField(TRIGGERS.name, trigger.name, (value) => {
+  // The Name starts prefilled (model.js newTrigger); a zone trigger's name follows the zone until it is edited here.
+  const nameField = textField(TRIGGERS.name, trigger.name, (value) => {
     trigger.name = value;
+    trigger.nameFollowsZone = false;
     change();
-  }, { path: `${path}.name`, required: true, help: TRIGGERS.nameHelp, placeholder: TRIGGERS.namePlaceholder[trigger.type] }));
+  }, { path: `${path}.name`, required: true, help: TRIGGERS.nameHelp });
+  grid.appendChild(nameField);
 
   grid.appendChild(radioField(TRIGGERS.accessory, trigger.accessory, [
     { value: 'occupancy', label: TRIGGERS.accessoryOptions.occupancy },
@@ -187,6 +190,13 @@ function renderCard(app, trigger, index) {
       value: String(zone), label: String(zone),
     })), (value) => {
       trigger.zone = Number(value);
+      if (trigger.nameFollowsZone) {
+        trigger.name = defaultTriggerName('hrZone', trigger.zone);
+        const input = nameField.querySelector('input');
+        if (input) {
+          input.value = trigger.name;
+        }
+      }
       change();
     }, { path: `${path}.zone` })));
     grid.appendChild(el('div', { class: 'ns-span-3' }, numberField(TRIGGERS.holdTime, trigger.holdTime, (value) => {

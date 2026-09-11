@@ -4,8 +4,21 @@
    and spacing follow the design README: body 14.4px/300, labels 600, help 12.6px, h2 20px/300, controls
    38px with a 6px radius, 16px card padding, 24px between sections, 8px grid gap. */
 
+/* The Homebridge UI wraps this page in its own document inside a modal iframe and sizes the iframe to
+   document.body.scrollHeight (plus 10px) from the client's fixScrollHeight. Any margin that collapses
+   through the root and the body (the banner's 16px top margin) lands outside that measure but inside
+   the document, so the iframe ends up shorter than its document and wheel scrolling sticks at the
+   boundary. overflow hidden on html and body stops the collapse and leaves the iframe without a scroll
+   of its own; margin 0 keeps the measure equal to the content. */
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
 .peloton-ui {
   box-sizing: border-box;
+  display: flow-root;
   width: 100%;
   max-width: 100%;
   padding: 0 16px 16px;
@@ -308,12 +321,23 @@ body[class*="config-ui-x-dark-mode"] .peloton-ui,
   white-space: normal;
 }
 
-.peloton-ui .ns-link-button.text-danger {
-  color: var(--ns-danger) !important;
+/* The host's dark themes grey every .btn-link with an important rule (.config-ui-x-dark-mode-{theme}
+   .btn-link), which outweighed the page's link colour on Connect, Test, Add account, Edit, and
+   Duplicate trigger while Remove kept its own important red. The same weight, scoped to the page's
+   link buttons and the callout link, keeps them in the link colour the page declares for each theme
+   (the homebridge-notify-switch fix: the link colour is re-declared for dark mode and every link on
+   the page takes it from that token). Cancel and the help toggle stay secondary, Remove stays red. */
+.peloton-ui .btn-link.ns-link-button,
+.peloton-ui .ns-callout a {
+  color: var(--ns-link) !important;
 }
 
-.peloton-ui .ns-link-button.ns-secondary {
-  color: var(--ns-secondary);
+.peloton-ui .btn-link.ns-link-button.ns-secondary {
+  color: var(--ns-secondary) !important;
+}
+
+.peloton-ui .btn-link.ns-link-button.text-danger {
+  color: var(--ns-danger) !important;
 }
 
 .ns-link-button:hover,
@@ -851,8 +875,8 @@ body[class*="config-ui-x-dark-mode"] .peloton-ui,
   vertical-align: top;
 }
 
-.peloton-ui .ns-issues-toggle {
-  color: inherit;
+.peloton-ui .btn-link.ns-link-button.ns-issues-toggle {
+  color: inherit !important;
   font-size: 12.6px;
 }
 

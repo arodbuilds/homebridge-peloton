@@ -31,6 +31,17 @@ export function toastSuccess(message) {
   hb().toast.success(message, TOAST_TITLE);
 }
 
+/**
+ * Asks the host to size the settings iframe to the page again (the plugin-ui-utils fixScrollHeight).
+ * Called after every render so the frame matches the content; a host without it is left alone.
+ */
+export function fixScrollHeight() {
+  const host = hb();
+  if (host && typeof host.fixScrollHeight === 'function') {
+    host.fixScrollHeight();
+  }
+}
+
 export function setSaveEnabled(enabled) {
   if (enabled) {
     hb().enableSaveButton();

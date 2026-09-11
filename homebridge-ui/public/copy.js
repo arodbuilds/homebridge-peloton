@@ -127,7 +127,6 @@ export const TRIGGERS = {
   edit: 'Edit',
   done: 'Done',
   name: 'Name',
-  namePlaceholder: { workout: 'e.g. Workout', hrZone: 'e.g. Zone 4 or higher' },
   nameHelp: 'Shown in the Home app. Letters, numbers, spaces and apostrophes.',
   accessory: 'Show in HomeKit as',
   accessoryOptions: { occupancy: 'Occupancy sensor', switch: 'Switch' },
