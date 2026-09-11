@@ -8,28 +8,36 @@
         "username": "owner_rider"
       },
       "max_shared_users": 20,
+      "bike_device_name": "Bike+",
+      "tread_device_name": "Tread",
       "shared_user_set": [
         {
           "id": "u-member-0002",
           "username": "member_runner",
-          "first_name": "Member",
-          "last_name": "Example",
+          "name": "Member Example",
           "image_url": "https://cdn.example.invalid/avatars/default.png",
-          "is_profile_image_default": true,
-          "last_workout_at": null
+          "is_profile_private": false,
+          "is_provisional": false,
+          "last_workout_at": null,
+          "total_workouts": 0,
+          "location": ""
         },
         {
           "id": "u-member-0003",
           "username": "member_lifter",
-          "first_name": "Lifter",
-          "last_name": "Example",
+          "name": "Lifter Example",
           "image_url": "https://cdn.example.invalid/avatars/u-member-0003.jpg",
-          "is_profile_image_default": false,
-          "last_workout_at": 1788900000
+          "is_profile_private": false,
+          "is_provisional": false,
+          "last_workout_at": 1788900000,
+          "total_workouts": 412,
+          "location": "Example City"
         }
       ],
       "attached_devices": [
-        { "id": "dev-bike-0001", "name": "Bike+", "device_type": "home_bike_plus" }
+        { "device_id": "dev-bike-0001", "device_name": "Bike+", "device_group": "bike", "last_attached_at": 1788950000 },
+        { "device_id": "dev-tread-0001", "device_name": "Tread", "device_group": "tread", "last_attached_at": 1788940000 },
+        { "device_id": "dev-guide-0001", "device_name": null, "device_group": "guide", "last_attached_at": 1788930000 }
       ]
     },
     {
@@ -40,6 +48,8 @@
         "username": "owner_rider"
       },
       "max_shared_users": 20,
+      "bike_device_name": null,
+      "tread_device_name": null,
       "shared_user_set": [],
       "attached_devices": []
     }
