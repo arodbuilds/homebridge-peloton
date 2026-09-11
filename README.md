@@ -17,7 +17,7 @@ Add a platform block to config.json. This example has one account and one Workou
   "platform": "Peloton",
   "name": "Peloton",
   "accounts": [
-    { "id": "a1", "email": "you@example.com", "displayName": "Alex" }
+    { "id": "a1", "email": "you@example.com", "password": "your Peloton password", "displayName": "Alex" }
   ],
   "triggers": [
     { "id": "t1", "type": "workout", "name": "Workout", "accessory": "occupancy",
@@ -34,7 +34,7 @@ Add a platform block to config.json. This example has one account and one Workou
 - A heart-rate zone trigger looks like `{ "id": "t2", "type": "hrZone", "name": "Zone 4 or higher", "who": "<userId>", "zone": 4, "holdTime": 20 }` and is on once the rider has been at or above the zone for `holdTime` seconds.
 - `accessory` is "occupancy" (default) or "switch". Both kinds are read-only sensors in effect.
 - `polling.fastInterval` is in seconds with a floor of 5; `standbyInterval` may be 0 for no polling while the Fast polling switch is off.
-- Accounts are connected from the settings page, which arrives in build 3. Until then an account without a stored sign-in is logged as "not connected, not polling" at startup.
+- An account with `email` and `password` in config is enough for the plugin to connect on its own: at startup it signs in each such account that has no stored sign-in, one after another, and signs in again once if Peloton later invalidates the session. The log shows "Connected {name} (@{username})" or the sign-in stage and HTTP status that failed. The settings page in build 3 adds the browser sign-in path, which stores no password.
 
 The plugin keeps each account's sign-in under `homebridge-peloton/accounts/` in the Homebridge storage folder, in files readable only by the Homebridge user. Delete that folder to remove every stored sign-in.
 

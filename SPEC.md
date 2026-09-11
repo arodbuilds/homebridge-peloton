@@ -186,6 +186,7 @@ One loop per platform. All timing uses an injectable clock so tests can drive it
 - A workout already IN_PROGRESS at plugin startup counts as started on the first poll.
 - Every poll result is logged at debug with the workout id, status, discipline, device_type, and platform, so the ride test can fill the device map (8.3).
 - Transient API failures (network, 5xx, 429, a second 401 after a refresh) keep the last known state and retry on the next tick with backoff: from the third consecutive failure the account's interval doubles (20 s, 40 s, 60 s on a 10 s base) up to 60 s, or the base interval when that is longer, until a success. The third failure logs one warn line with the HTTP status and the new interval; other failures log at debug. A 401 goes through refresh once; a refresh failure with invalid_grant marks the account reconnect_needed, drops it from polling, logs the sign-in expired line, and raises accountStateChanged for the attention sensor.
+- Re-login after invalid_grant: when the dropped account has a password in config, the platform attempts login() once, not in a loop. Success runs the connect flow (10), logs the Connected line, puts the account back on the schedule, and raises accountStateChanged with state connected so the attention sensor clears. Failure logs the sign-in failed line once and leaves the account reconnect_needed; the attention event stands until the settings page connects it or the next restart signs it in.
 - The poller keeps only the latest workout and the latest sample offset per account, and raises events for the platform: workoutStarted, workoutEnded, sampleReceived, accountStateChanged, switchChanged, switchAutoOff, triggerChanged, checkInComplete.
 
 ### 8.3 Trigger evaluation (pure, in rules.ts)
@@ -244,6 +245,12 @@ Error stage to page message mapping (page copy lives in design/README.md):
 
 Password handling: the page sends the password to /connect once; the server performs the login and stores tokens. The page also writes the password to config.json through the host's normal save so the plugin can re-login headlessly after invalid_grant. The browser path stores no password.
 
+Connect flow (store/account-connect.ts, shared by the settings page, the startup sign-in, and the re-login in 8.2): login() once; save the tokens with state connected before anything else; getMe to fill userId, username, displayName (kept when the record already has one), imageUrl, isProfileImageDefault, zones, and maxHr; getSubscriptions to settle isOwner and, for the owner, the household profiles and devices (7). AuthError from the login propagates untouched so the caller logs its stage; a profile failure after a successful login leaves a connected account whose profile the next check-in completes.
+
+Startup sign-in: on didFinishLaunching, before polling starts, the platform runs the connect flow once for each configured account that has email and password and whose store record is missing, not_connected, or reconnect_needed, one account after another in config order. Success logs the Connected line. AuthError logs the sign-in failed line once, leaves the record as it was, and skips the account for this run. Accounts with tokens already stored are not re-logged in.
+
+Owner detection: the owner is the account whose getSubscriptions returns a membership with owner.id equal to its own userId; isOwner is set from that, never from config order.
+
 ## 11. Logging
 
 Info level, one line each, never more than one per event:
@@ -256,11 +263,12 @@ Info level, one line each, never more than one per event:
 - "Fast polling switch turned off automatically after {minutes} minutes"
 - "{displayName}: sign-in expired, reconnect needed (stage {stage}, HTTP {status})"
 - "Daily check-in complete for {n} accounts"
+- "{displayName}: sign-in failed at stage {stage}, HTTP {status}; use the settings page to connect", once per failed startup sign-in or re-login
 - "{displayName}: reconnect needed, not polling until the account is connected again" and "{displayName}: not connected, not polling", once per skipped account at startup
 - "{displayName}: device filtering is unavailable for device_type "{device_type}", treating the device filter as any", once per account and device_type
 - "{displayName}: no heart-rate data for this workout", once per workout
 
-Warn level: config values clamped or defaulted (6), the third consecutive poll failure with its HTTP status and the backoff interval (8.2).
+Warn level: config values clamped or defaulted (6), the third consecutive poll failure with its HTTP status and the backoff interval (8.2), a profile fetch that fails after a successful sign-in (10).
 
 Debug level: each poll result with workout id, status, discipline, device_type, and platform, and each heart-rate sample with its zone. With config.debug these lines are printed at info so they show without Homebridge's debug flag. Never tokens, passwords, emails, or response bodies.
 
@@ -301,10 +309,11 @@ Each is a clarification to this document, not a change to the decisions in secti
 - 5 and 6: config parsing lives in src/config.ts; the validation rules (clamps, defaults, generated ids) are in section 6.
 - 7: the record gains isOwner and devices; household profiles are keyed by userId; withValidToken has a forceRefresh option.
 - 8.1: a released state between locked and scanning or standby, while holds run; the exact immediate-cycle and stagger behaviour.
-- 8.2: the poller's event list, including triggerChanged, switchChanged, and checkInComplete beyond the five in the build brief, because the poller owns the hold timers and the accessories need the computed trigger state; the backoff schedule and its one warn line; a dropped locked account ends its workout.
+- 8.2: the poller's event list, including triggerChanged, switchChanged, and checkInComplete beyond the five in the build brief, because the poller owns the hold timers and the accessories need the computed trigger state; the backoff schedule and its one warn line; a dropped locked account ends its workout; one re-login after invalid_grant through a reconnect hook the platform supplies.
+- 10: the connect flow lives in store/account-connect.ts and is shared by the startup sign-in, the re-login, and (in build 3) the settings page; the platform signs in accounts with credentials at startup; the owner is settled from subscriptions.
 - 8.3: sample freshness is judged by the last seconds_since_pedaling_start offset; hold transitions run on timers; the device map is per account but built from the household's devices for every account.
 - 8.5: the check-in runs every day, settles isOwner, and runs with standby 0.
 - 9: the UUID seed strings, the fixed serials, the attention sensor name, and cleanup of the two fixed accessories when config turns them off.
-- 11: three startup and once-per-condition info lines added; warn lines listed; debug lines printed at info under config.debug.
+- 11: four startup and once-per-condition info lines added (sign-in failed, the two skip lines, device filtering, no heart-rate data); warn lines listed; debug lines printed at info under config.debug.
 - 13: hap-nodejs is a dev dependency pinned to Homebridge's version for the accessory and platform tests.
 - config.schema.json still carries only the platform name; it mirrors the full shape when the settings page arrives in build 3.
