@@ -281,9 +281,12 @@ export class UiHandlers {
       await response.text().catch(() => undefined);
       return { ok: false, stage: 'api', status: response.status };
     }
-    const contentType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim() || 'image/jpeg';
+    // The CDN behind image_url does not always say image/*: S3 answers binary/octet-stream for an
+    // object stored without a content type. The bytes decide when the header does not.
+    const headerType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (!contentType.startsWith('image/') || bytes.length === 0 || bytes.length > AVATAR_MAX_BYTES) {
+    const contentType = headerType.startsWith('image/') ? headerType : imageTypeOf(bytes);
+    if (contentType === undefined || bytes.length === 0 || bytes.length > AVATAR_MAX_BYTES) {
       return { ok: false, stage: 'api', status: response.status };
     }
     const data = bytes.toString('base64');
@@ -375,7 +378,28 @@ export function summarize(id: string, record: AccountRecord, lastWorkoutAt: numb
   return summary;
 }
 
-/** Names of the membership's devices from the owner's record, for the read-only Devices line. */
+/** The image type from the first bytes: JPEG, PNG, GIF, or WebP; undefined for anything else. */
+export function imageTypeOf(bytes: Uint8Array): string | undefined {
+  const starts = (prefix: number[], offset = 0): boolean => prefix.every((byte, index) => bytes[offset + index] === byte);
+  if (starts([0xff, 0xd8, 0xff])) {
+    return 'image/jpeg';
+  }
+  if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return 'image/png';
+  }
+  if (starts([0x47, 0x49, 0x46, 0x38]) && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) {
+    return 'image/gif';
+  }
+  if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8)) {
+    return 'image/webp';
+  }
+  return undefined;
+}
+
+/**
+ * Names of the membership's devices from the owner's record, for the read-only Devices line. A device
+ * without an id counts by its name, so two unnamed-id entries never collapse into one.
+ */
 export function devicesOf(records: Map<string, AccountRecord>): DeviceSummary[] {
   const devices: DeviceSummary[] = [];
   for (const record of records.values()) {

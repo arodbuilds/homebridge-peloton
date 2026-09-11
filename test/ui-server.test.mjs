@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getMe, getSubscriptions } from '../dist/api/peloton-api.js';
 import { AuthError, PELOTON_AUTH, browserFinish, browserStart } from '../dist/auth/peloton-auth.js';
-import { AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse } from '../dist/ui/handlers.js';
+import { AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse, imageTypeOf } from '../dist/ui/handlers.js';
 import { createFakeStore } from './helpers/fake-store.mjs';
 import { apiResponse, authFixture, jsonResponse } from './helpers/fixtures.mjs';
 import { createRoutedFetch } from './helpers/routed-fetch.mjs';
@@ -359,6 +359,32 @@ describe('/avatar', () => {
     clock.advance(1);
     await routes['/avatar']({ id: 'a1' });
     assert.equal(fetch.count(AVATAR_URL), 2);
+  });
+
+  it('reads the image type from the bytes when the CDN does not say image/*, as S3 answers for an object stored without one', async () => {
+    const { routes, fetch, clock } = harness();
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Buffer.from('JFIF')]);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+    fetch.route(AVATAR_URL, [
+      { status: 200, headers: { 'content-type': 'binary/octet-stream' }, body: jpeg },
+      { status: 200, headers: {}, body: png },
+      { status: 200, headers: { 'content-type': 'application/octet-stream' }, body: Buffer.from('<html>') },
+    ]);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: true, status: 200, contentType: 'image/jpeg', data: jpeg.toString('base64') });
+    clock.advance(AVATAR_CACHE_TTL_MS);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: true, status: 200, contentType: 'image/png', data: png.toString('base64') });
+    clock.advance(AVATAR_CACHE_TTL_MS);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: false, stage: 'api', status: 200 });
+  });
+
+  it('knows JPEG, PNG, GIF, and WebP from their first bytes and nothing else', () => {
+    assert.equal(imageTypeOf(Buffer.from([0xff, 0xd8, 0xff, 0xdb])), 'image/jpeg');
+    assert.equal(imageTypeOf(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'image/png');
+    assert.equal(imageTypeOf(Buffer.from('GIF89a......')), 'image/gif');
+    assert.equal(imageTypeOf(Buffer.from('RIFF    WEBPVP8 ')), 'image/webp');
+    assert.equal(imageTypeOf(Buffer.from('RIFF    WAVE')), undefined);
+    assert.equal(imageTypeOf(Buffer.from('<html>')), undefined);
+    assert.equal(imageTypeOf(Buffer.alloc(0)), undefined);
   });
 
   it('reports a CDN failure or a non-image answer as stage api', async () => {
