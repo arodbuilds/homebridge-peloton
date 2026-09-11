@@ -834,6 +834,24 @@ describe('daily check-in', () => {
     assert.equal(h.lines.debug.filter((line) => line === 'Owner: daily check-in failed (HTTP 503)').length, 1);
   });
 
+  it('brings a stale household profile up to date and re-stores the owner devices at check-in', async () => {
+    const h = await harness({ config: { polling: { standbyInterval: 0 } }, accounts: [OWNER] });
+    await h.store.save('u-member-0002', {
+      userId: 'u-member-0002', username: 'member_runner', displayName: 'member_runner', imageUrl: 'https://cdn.example.invalid/avatars/old.png',
+      isProfileImageDefault: false, state: 'not_connected',
+    });
+    h.fetch.route('/api/me', apiResponse('me-owner')).route('/subscriptions', apiResponse('subscriptions'));
+    h.poller.start();
+    await h.poller.checkInNow();
+    const profile = await h.store.load('u-member-0002');
+    assert.equal(profile.displayName, 'Member Example');
+    assert.equal(profile.imageUrl, 'https://cdn.example.invalid/avatars/default.png');
+    assert.equal(profile.isProfileImageDefault, true);
+    assert.equal(profile.state, 'not_connected');
+    assert.deepEqual(readRecord(h.store, 'a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, h.clock.now());
+  });
+
   it('uses the profile zones learned at check-in for later heart-rate samples', async () => {
     const h = await harness({ accounts: [MEMBER], config: { triggers: [workoutTrigger(), hrTrigger({ who: MEMBER.userId })] } });
     h.fetch.route('/api/me', apiResponse('me-member')).route('/subscriptions', apiResponse('subscriptions'));

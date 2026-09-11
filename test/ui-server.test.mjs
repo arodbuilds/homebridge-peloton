@@ -311,6 +311,14 @@ describe('/test', () => {
     assert.equal(fetch.calls('/api/me')[0].headers.authorization, 'Bearer access-1');
     assert.equal(store.records.get('a1').lastCheckedAt, NOW);
     assert.equal(store.records.get('a1').maxHr, 168);
+    assert.equal(store.records.get('a1').displayName, 'Owner', 'a display name of its own is kept');
+  });
+
+  it('replaces a display name that is only the username with the profile\'s name', async () => {
+    const { routes, store, fetch } = harness({ records: { a1: connected({ displayName: 'owner_rider' }) } });
+    fetch.route('/api/me', apiResponse('me-owner'));
+    assert.equal((await routes['/test']({ id: 'a1' })).ok, true);
+    assert.equal(store.records.get('a1').displayName, 'Owner Example');
   });
 
   it('reports a dead session as stage refresh and an account without tokens too', async () => {
@@ -338,6 +346,22 @@ describe('/household', () => {
     assert.deepEqual(result.accounts.map((account) => account.id).sort(), ['a1', 'u-member-0002', 'u-member-0003']);
     assert.deepEqual(result.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
     assert.equal(result.accounts.find((account) => account.id === 'u-member-0003').state, 'not_connected');
+  });
+
+  it('brings a stored household profile up to date with the member\'s name and photo, and leaves a connected member\'s own record alone', async () => {
+    const stale = { ...PROFILE, username: 'old_name', displayName: 'old_name', imageUrl: 'https://cdn.example.invalid/avatars/old.png' };
+    const lifter = connected({ userId: 'u-member-0003', username: 'member_lifter', displayName: 'Custom Lifter', isOwner: false, devices: undefined });
+    const { routes, store } = harness({ records: { a1: connected(), 'u-member-0002': stale, a2: lifter } });
+    const result = await routes['/household']();
+    assert.equal(result.ok, true);
+    const profile = store.records.get('u-member-0002');
+    assert.equal(profile.username, 'member_runner');
+    assert.equal(profile.displayName, 'Member Example');
+    assert.equal(profile.imageUrl, 'https://cdn.example.invalid/avatars/default.png');
+    assert.equal(profile.state, 'not_connected');
+    assert.equal(store.records.get('a2').displayName, 'Custom Lifter');
+    assert.equal(store.records.has('u-member-0003'), false, 'no profile is written beside a member\'s own record');
+    assert.equal(result.accounts.find((account) => account.id === 'u-member-0002').displayName, 'Member Example');
   });
 
   it('skips members and reports the owner failure by stage', async () => {
