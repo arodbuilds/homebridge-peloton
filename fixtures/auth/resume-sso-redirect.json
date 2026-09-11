@@ -1,0 +1,7 @@
+{
+  "status": 302,
+  "headers": {
+    "location": "https://auth-orca.onepeloton.com/sso/login_site?visited_site=https%3A%2F%2Fmembers.onepeloton.com&user_id=u-owner-0001&client_name=Members&session_claim_token=redacted-claim-token&state=redacted-sso-state"
+  },
+  "body": ""
+}

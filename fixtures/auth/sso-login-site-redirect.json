@@ -1,0 +1,11 @@
+{
+  "status": 303,
+  "headers": {
+    "location": "https://auth-orca.onepeloton.com/sso/login_domain?state=redacted-sso-state&visited_domain=onepeloton.com",
+    "set-cookie": [
+      "peloton_logged_in_user_hash=redacted-user-hash; Path=/; Expires=Sat, 11 Sep 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=None",
+      "peloton_visited_sites=redacted-visited-sites; Path=/; Expires=Sat, 11 Sep 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=None"
+    ]
+  },
+  "body": ""
+}

@@ -34,6 +34,34 @@ function happyPath() {
   ];
 }
 
+/** The six-hop chain observed on the Pi: /login/callback through auth-orca.onepeloton.com to the redirect URI. */
+function sixHopChain() {
+  return [
+    authFixture('callback-resume-redirect'),
+    authFixture('resume-sso-redirect'),
+    authFixture('sso-login-site-redirect'),
+    authFixture('sso-login-domain-redirect'),
+    authFixture('continue-redirect'),
+    authFixture('resume-callback-redirect'),
+  ];
+}
+
+/** The happy path with the six-hop chain in place of the single callback redirect. */
+function sixHopPath() {
+  const steps = happyPath();
+  steps.splice(3, 1, ...sixHopChain());
+  return steps;
+}
+
+/** The cookie header of a recorded request as a name to value object; empty when none was sent. */
+function cookies(request) {
+  const header = request.headers.cookie;
+  if (header === undefined) {
+    return {};
+  }
+  return Object.fromEntries(header.split('; ').map((pair) => pair.split('=')));
+}
+
 async function expectAuthError(promise, stage, status, code) {
   let caught;
   try {
@@ -261,17 +289,142 @@ describe('login', () => {
     assert.equal(body.connection, PELOTON_AUTH.connection);
   });
 
-  it('follows several redirects on the tenant and stops at the first one that leaves it', async () => {
+  it('walks the six-hop chain across auth.onepeloton.com and auth-orca.onepeloton.com and ends with the code exchange', async () => {
+    const fetchImpl = createFakeFetch(sixHopPath());
+    const tokens = await login('rider@example.com', 'hunter2', fetchImpl, { now });
+
+    assert.deepEqual(tokens, { accessToken: 'redacted', refreshToken: 'redacted', expiresAt: NOW + 172_800_000 });
+    assert.equal(fetchImpl.remaining(), 0);
+    assert.equal(fetchImpl.requests.length, 10, 'authorize, login page, credentials, six hops, token');
+    assert.ok(fetchImpl.requests.every((request) => request.redirect === 'manual'));
+    assert.ok(fetchImpl.requests.every((request) => !request.url.startsWith('https://members.onepeloton.com')),
+      'the redirect URI is never followed');
+
+    const state = fetchImpl.authorizeState();
+    const [, , , hop1, hop2, hop3, hop4, hop5, hop6, token] = fetchImpl.requests;
+    assert.equal(hop1.method, 'POST');
+    assert.equal(hop1.url, `${PELOTON_AUTH.tenantUrl}/login/callback`);
+    assert.deepEqual(Object.keys(formBody(hop1)).sort(), ['wa', 'wctx', 'wresult']);
+
+    const hops = [hop2, hop3, hop4, hop5, hop6];
+    assert.deepEqual(hops.map((request) => request.url), [
+      `${PELOTON_AUTH.tenantUrl}/authorize/resume?state=redacted-resume-state`,
+      'https://auth-orca.onepeloton.com/sso/login_site?visited_site=https%3A%2F%2Fmembers.onepeloton.com'
+        + '&user_id=u-owner-0001&client_name=Members&session_claim_token=redacted-claim-token&state=redacted-sso-state',
+      'https://auth-orca.onepeloton.com/sso/login_domain?state=redacted-sso-state&visited_domain=onepeloton.com',
+      `${PELOTON_AUTH.tenantUrl}/continue?state=redacted-resume-state`,
+      `${PELOTON_AUTH.tenantUrl}/authorize/resume?state=redacted-resume-state`,
+    ]);
+    for (const request of hops) {
+      assert.equal(request.method, 'GET', 'every hop after the first is a GET');
+      assert.equal(request.body, undefined, 'the form body is never resent');
+      assert.equal(request.headers['content-type'], undefined);
+    }
+
+    // Hop 2 on the tenant carries the session cookies set by hop 1.
+    assert.equal(cookies(hop2).auth0, 'redacted-session-2');
+    assert.equal(cookies(hop2).auth0_compat, 'redacted-session-2');
+    assert.equal(cookies(hop2)._csrf, 'redacted-csrf');
+    // Hop 3 is the first request to auth-orca: nothing from auth.onepeloton.com goes there.
+    assert.deepEqual(cookies(hop3), {}, 'auth-orca gets no cookies from the tenant');
+    // Hop 4 sends auth-orca its own cookies from hop 3 and nothing else.
+    assert.deepEqual(cookies(hop4), {
+      peloton_logged_in_user_hash: 'redacted-user-hash',
+      peloton_visited_sites: 'redacted-visited-sites',
+    });
+    // Hops 5 and 6 back on the tenant carry the tenant cookies and none of auth-orca's.
+    for (const request of [hop5, hop6]) {
+      const sent = cookies(request);
+      assert.equal(sent.auth0, 'redacted-session-2');
+      assert.equal(sent._csrf, 'redacted-csrf');
+      for (const name of Object.keys(sent)) {
+        assert.doesNotMatch(name, /^peloton_/, `${name} set by auth-orca must not reach the tenant`);
+      }
+    }
+
+    assert.equal(token.method, 'POST');
+    assert.equal(token.url, `${PELOTON_AUTH.tenantUrl}${PELOTON_AUTH.tokenPath}`);
+    const exchange = jsonBody(token);
+    assert.equal(exchange.grant_type, 'authorization_code');
+    assert.equal(exchange.code, 'redacted-code');
+    assert.equal(token.headers.cookie, undefined, 'the token endpoint gets no cookies');
+    assert.equal(new URL(hop6.url).searchParams.get('state'), 'redacted-resume-state');
+    assert.notEqual(state, 'redacted-resume-state', 'the resume state is Auth0 minted, not ours');
+  });
+
+  it('still accepts the single-hop shape where /login/callback redirects straight to the redirect URI', async () => {
+    const fetchImpl = createFakeFetch(happyPath());
+    const tokens = await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    assert.equal(tokens.accessToken, 'redacted');
+    assert.equal(fetchImpl.requests.length, 5);
+  });
+
+  it('stops at the redirect URI even with a trailing slash and ignores the query', async () => {
+    const steps = happyPath();
+    steps[3] = redirectResponse('https://members.onepeloton.com/callback/?state={{state}}&code=redacted-code&extra=1');
+    const fetchImpl = createFakeFetch(steps);
+    await login('rider@example.com', 'hunter2', fetchImpl, { now });
+    assert.equal(fetchImpl.requests.length, 5);
+    assert.equal(jsonBody(fetchImpl.requests[4]).code, 'redacted-code');
+  });
+
+  it('follows a redirect to a host that merely resembles the redirect URI instead of treating it as the callback', async () => {
     const steps = happyPath();
     steps.splice(3, 1,
-      redirectResponse('/authorize/resume?state=redacted-resume'),
+      redirectResponse('https://members.onepeloton.com.example.invalid/callback?code=x&state={{state}}'),
+      redirectResponse('https://members.onepeloton.com/callbacks?code=x&state={{state}}'),
+      redirectResponse('http://members.onepeloton.com/callback?code=x&state={{state}}'),
       authFixture('callback-redirect'),
     );
     const fetchImpl = createFakeFetch(steps);
     await login('rider@example.com', 'hunter2', fetchImpl, { now });
-    assert.equal(fetchImpl.requests[4].method, 'GET');
-    assert.equal(fetchImpl.requests[4].url, `${PELOTON_AUTH.tenantUrl}/authorize/resume?state=redacted-resume`);
-    assert.equal(fetchImpl.requests[5].url, `${PELOTON_AUTH.tenantUrl}${PELOTON_AUTH.tokenPath}`);
+    assert.deepEqual(fetchImpl.requests.slice(4, 7).map((request) => request.url), [
+      'https://members.onepeloton.com.example.invalid/callback?code=x&state=' + fetchImpl.authorizeState(),
+      'https://members.onepeloton.com/callbacks?code=x&state=' + fetchImpl.authorizeState(),
+      'http://members.onepeloton.com/callback?code=x&state=' + fetchImpl.authorizeState(),
+    ]);
+    assert.equal(fetchImpl.requests[4].headers.cookie, undefined, 'an unknown host gets no cookies');
+    assert.equal(fetchImpl.requests[6].headers.cookie, undefined, 'Secure cookies are not sent over http');
+    assert.equal(fetchImpl.requests[7].url, `${PELOTON_AUTH.tenantUrl}${PELOTON_AUTH.tokenPath}`);
+  });
+
+  it('maps a 3xx without a Location mid-chain to stage callback with the status', async () => {
+    const steps = happyPath();
+    steps.splice(3, 1, authFixture('callback-resume-redirect'), { status: 302, headers: {}, body: '' });
+    const fetchImpl = createFakeFetch(steps);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'callback', 302);
+    assert.equal(fetchImpl.requests.length, 5, 'no token request was made');
+  });
+
+  it('maps a non-3xx page mid-chain to stage callback as before', async () => {
+    const steps = happyPath();
+    steps.splice(3, 1,
+      authFixture('callback-resume-redirect'),
+      authFixture('resume-sso-redirect'),
+      htmlResponse(200, '<html><body><p>Something went wrong.</p></body></html>'),
+    );
+    const fetchImpl = createFakeFetch(steps);
+    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'callback', 200);
+    assert.equal(fetchImpl.requests.length, 6);
+  });
+
+  it('gives up after twelve redirects that never reach the redirect URI', async () => {
+    const steps = happyPath();
+    const loop = Array.from({ length: 13 }, (_, index) => redirectResponse(`/authorize/resume?state=loop-${index}`));
+    steps.splice(3, 1, ...loop, authFixture('callback-redirect'));
+    const fetchImpl = createFakeFetch(steps);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'callback');
+    assert.equal(error.status, undefined);
+    assert.equal(fetchImpl.requests.length, 3 + 13, 'the first request plus twelve followed redirects');
+  });
+
+  it('reaches the redirect URI on exactly the twelfth redirect', async () => {
+    const steps = happyPath();
+    const loop = Array.from({ length: 11 }, (_, index) => redirectResponse(`/authorize/resume?state=loop-${index}`));
+    steps.splice(3, 1, ...loop, authFixture('callback-redirect'));
+    const fetchImpl = createFakeFetch(steps);
+    await login('a@example.com', 'p', fetchImpl, { now });
+    assert.equal(fetchImpl.requests.length, 3 + 12 + 1);
   });
 
   it('maps a failing /authorize to stage authorize with the status', async () => {
@@ -431,6 +584,17 @@ describe('login', () => {
       for (const file of files) {
         assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /access_token/);
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('dumps no redirect hops of the six-hop chain, only the two HTML pages', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'peloton-dump-chain-'));
+    try {
+      const fetchImpl = createFakeFetch(sixHopPath());
+      await login('rider@example.com', 'hunter2', fetchImpl, { now, debugDump: dir });
+      assert.deepEqual(readdirSync(dir).sort(), ['01-authorize-login-page.html', '02-credentials-response.html']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -598,6 +762,24 @@ describe('CookieJar', () => {
     assert.ok(jar.header(new URL('https://auth.onepeloton.com/u/mfa')).includes('scoped=yes'));
     assert.equal(jar.header(new URL('http://auth.onepeloton.com/')).includes('locked=yes'), false);
     assert.equal(jar.header(new URL('https://evil-onepeloton.com/')), undefined);
+  });
+
+  it('keeps auth.onepeloton.com and auth-orca.onepeloton.com apart without a Domain attribute', () => {
+    const jar = new CookieJar();
+    const tenant = new URL('https://auth.onepeloton.com/authorize/resume?state=x');
+    const orca = new URL('https://auth-orca.onepeloton.com/sso/login_site?state=y');
+    jar.storeLine(tenant, 'auth0=tenant-session; Path=/; HttpOnly; Secure; SameSite=None');
+    jar.storeLine(orca, 'peloton_logged_in_user_hash=orca-hash; Path=/; HttpOnly; Secure; SameSite=None');
+    jar.storeLine(orca, 'peloton_visited_sites=orca-sites; Path=/sso; Secure');
+    assert.equal(
+      jar.header(new URL('https://auth-orca.onepeloton.com/sso/login_domain')),
+      'peloton_logged_in_user_hash=orca-hash; peloton_visited_sites=orca-sites',
+    );
+    assert.equal(jar.header(new URL('https://auth-orca.onepeloton.com/other')), 'peloton_logged_in_user_hash=orca-hash', 'Path=/sso is honoured');
+    assert.equal(jar.header(new URL('http://auth-orca.onepeloton.com/sso/login_domain')), undefined, 'Secure cookies stay off http');
+    assert.equal(jar.header(new URL('https://auth.onepeloton.com/continue')), 'auth0=tenant-session');
+    assert.equal(jar.header(new URL('https://onepeloton.com/')), undefined, 'the parent domain gets nothing');
+    assert.equal(jar.get(orca, 'auth0'), undefined);
   });
 
   it('ignores a Domain attribute that does not cover the responding host', () => {

@@ -20,7 +20,11 @@ export const PELOTON_AUTH = {
   tenantUrl: 'https://auth.onepeloton.com',
   /** Public OAuth client id used by the members web app. */
   clientId: 'WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM',
-  /** Redirect URI registered for that client. Never followed; only parsed. */
+  /**
+   * Redirect URI registered for that client. The login follows Auth0's redirect chain until a
+   * Location points here (same scheme, host, and path; query ignored), then reads code and state
+   * from that Location without following it.
+   */
   redirectUri: 'https://members.onepeloton.com/callback',
   /** OAuth scopes. offline_access yields a refresh token. */
   scope: 'offline_access openid peloton-api.members:default',
@@ -138,7 +142,12 @@ export interface LoginPageConfig {
 
 type FetchImpl = typeof fetch;
 
-const MAX_REDIRECTS = 8;
+/**
+ * Upper bound on the redirect chain after any single request. The live chain after the
+ * credentials POST is six hops across auth.onepeloton.com and auth-orca.onepeloton.com
+ * (SPEC section 4.1); twelve leaves room for Auth0 to add steps without looping forever.
+ */
+const MAX_REDIRECTS = 12;
 
 const VERIFICATION_MARKERS = [
   /mfa[_-]?required/i,
@@ -194,8 +203,8 @@ export async function login(
 
   // 1. GET /authorize and follow to the login page, collecting cookies from every response.
   const authorizeUrl = buildAuthorizeUrl(challenge, state, nonce);
-  const loginPage = await followOnTenant(fetchImpl, jar, authorizeUrl, { method: 'GET' }, 'authorize');
-  if (loginPage.kind === 'left_tenant') {
+  const loginPage = await followRedirects(fetchImpl, jar, authorizeUrl, { method: 'GET' }, 'authorize');
+  if (loginPage.kind === 'redirect_uri') {
     // An existing session would skip the login page. With a fresh jar this cannot happen; treat as failure.
     throw new AuthError('authorize', loginPage.status);
   }
@@ -263,13 +272,16 @@ export async function login(
     throw new AuthError('verification_required', credentialsResponse.status);
   }
 
-  // 4. Parse the auto-post form Auth0 returned and post it to its action.
+  // 4. Parse the auto-post form Auth0 returned and post it to its action, then follow the redirect
+  //    chain that completes the session: /authorize/resume, the auth-orca.onepeloton.com SSO hops,
+  //    /continue, and /authorize/resume again. Each host gets its own cookies; the form body is
+  //    sent once. The walk stops at the first Location that is the redirect URI.
   const form = parseForm(credentialsText);
   if (form === undefined) {
     throw new AuthError('callback', credentialsResponse.status);
   }
   const actionUrl = new URL(form.action, credentialsUrl).toString();
-  const callback = await followOnTenant(fetchImpl, jar, actionUrl, {
+  const callback = await followRedirects(fetchImpl, jar, actionUrl, {
     method: form.method,
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -282,7 +294,7 @@ export async function login(
 
   // 5. Do not follow the final redirect. Read code and state from its Location header. Auth0
   //    restores the state from the authorize URL here, not its transaction state.
-  if (callback.kind !== 'left_tenant') {
+  if (callback.kind !== 'redirect_uri') {
     await dump.write('callback-response', callback.body);
     if (looksLikeVerification(callback.body)) {
       throw new AuthError('verification_required', callback.status);
@@ -744,20 +756,22 @@ async function request(fetchImpl: FetchImpl, jar: CookieJar, url: string, init: 
 
 type FollowResult =
   | { kind: 'page'; status: number; body: string; url: string }
-  | { kind: 'left_tenant'; status: number; location: string };
+  | { kind: 'redirect_uri'; status: number; location: string };
 
 /**
- * Follows redirects while they stay on the tenant host. Stops, without following, at the first
- * redirect that leaves it, and returns that Location. The POST body is only sent on the first hop.
+ * Sends the request, then follows every 3xx redirect on any host until one points at the
+ * registered redirect URI, which is returned without being followed. Each hop is a plain GET
+ * carrying only the cookies the jar holds for that hop's host; the body of the first request is
+ * never resent. A 3xx without a Location, or a chain longer than MAX_REDIRECTS, is AuthError at
+ * the given stage. Any non-3xx response before the redirect URI is returned as a page.
  */
-async function followOnTenant(
+async function followRedirects(
   fetchImpl: FetchImpl,
   jar: CookieJar,
   startUrl: string,
   init: RequestInitLite,
   stage: AuthStage,
 ): Promise<FollowResult> {
-  const tenantHost = new URL(PELOTON_AUTH.tenantUrl).hostname;
   let url = startUrl;
   let current: RequestInitLite = init;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -768,9 +782,14 @@ async function followOnTenant(
       if (location === null) {
         throw new AuthError(stage, response.status);
       }
-      const next = new URL(location, url);
-      if (next.hostname.toLowerCase() !== tenantHost) {
-        return { kind: 'left_tenant', status: response.status, location: next.toString() };
+      let next: URL;
+      try {
+        next = new URL(location, url);
+      } catch {
+        throw new AuthError(stage, response.status);
+      }
+      if (isRedirectUri(next)) {
+        return { kind: 'redirect_uri', status: response.status, location: next.toString() };
       }
       url = next.toString();
       current = { method: 'GET', headers: { accept: 'text/html' } };
@@ -782,8 +801,17 @@ async function followOnTenant(
   throw new AuthError(stage);
 }
 
+/** True when url is the registered redirect URI: same scheme, host, and path (trailing slash optional); the query is ignored. */
+function isRedirectUri(url: URL): boolean {
+  return url.protocol === REDIRECT.protocol
+    && url.hostname.toLowerCase() === REDIRECT.hostname
+    && (url.pathname.replace(/\/+$/, '') || '/') === REDIRECT.pathname;
+}
+
 /* ------------------------------------------------------------------------------------------------
- * Cookie jar: one host, name to value. Enough for Auth0's session and CSRF cookies.
+ * Cookie jar: cookies keyed by host, then name. Each host in the redirect chain (auth.onepeloton.com,
+ * auth-orca.onepeloton.com) gets back only what it set, unless a Domain attribute covers more.
+ * Path and Secure are honoured; HttpOnly and SameSite do not apply to a non-browser client.
  * ---------------------------------------------------------------------------------------------- */
 
 interface StoredCookie {
