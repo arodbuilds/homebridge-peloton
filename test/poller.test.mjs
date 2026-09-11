@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { AuthError } from '../dist/auth/peloton-auth.js';
 import { parseConfig } from '../dist/config.js';
-import { Poller, backoffInterval, deviceMapFromDevices } from '../dist/poller/poller.js';
+import { Poller, backoffInterval, deviceMapFromDevices, nextLocalTime } from '../dist/poller/poller.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
 import { apiFixture, apiResponse, jsonResponse } from './helpers/fixtures.mjs';
@@ -114,6 +114,7 @@ async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], ref
   const events = [];
   const eventNames = [
     'workoutStarted', 'workoutEnded', 'sampleReceived', 'accountStateChanged', 'switchChanged', 'switchAutoOff', 'triggerChanged', 'stateChanged',
+    'checkInComplete',
   ];
   for (const name of eventNames) {
     poller.on(name, (event) => events.push({ event: name, ...event }));
@@ -663,6 +664,126 @@ describe('fast polling switch auto-off', () => {
     h.poller.setSwitch(true);
     h.poller.stop();
     assert.deepEqual(h.clock.pending(), []);
+  });
+});
+
+describe('daily check-in', () => {
+  function expectedCheckIn(now, time = '03:00') {
+    const [hours, minutes] = time.split(':').map(Number);
+    const next = new Date(now);
+    next.setHours(hours, minutes, 0, 0);
+    if (next.getTime() <= now) {
+      next.setDate(next.getDate() + 1);
+      next.setHours(hours, minutes, 0, 0);
+    }
+    return next.getTime();
+  }
+
+  it('computes the next local occurrence strictly after now', () => {
+    const now = Date.UTC(2026, 8, 11, 12, 0, 0);
+    assert.equal(nextLocalTime(now, '03:00'), expectedCheckIn(now, '03:00'));
+    assert.ok(nextLocalTime(now, '03:00') > now);
+    assert.ok(nextLocalTime(now, '03:00') - now <= 24 * HOUR);
+    const at = nextLocalTime(now, '23:30');
+    assert.equal(nextLocalTime(at, '23:30') - at, 24 * HOUR);
+    assert.equal(nextLocalTime(now, 'nonsense'), expectedCheckIn(now, '03:00'));
+  });
+
+  it('runs at dailyCheckIn even with standby 0, refreshing tokens and updating zones, household, and devices', async () => {
+    const h = await harness({ config: { polling: { standbyInterval: 0 }, triggers: [workoutTrigger({ device: 'dev-bike-0001' })] } });
+    h.fetch.route('/api/me', [apiResponse('me-owner'), apiResponse('me-member')]).route('/subscriptions', apiResponse('subscriptions'));
+    h.poller.start();
+    const due = expectedCheckIn(h.clock.now());
+    await h.clock.advance(due - h.clock.now() - 1);
+    assert.equal(h.fetch.requests.length, 0);
+    await h.clock.advance(1);
+    assert.deepEqual(h.fetch.requests.map((request) => request.url.replace('https://api.onepeloton.com', '')), [
+      '/api/me',
+      '/api/user/u-owner-0001/subscriptions',
+      '/api/me',
+      '/api/user/u-member-0003/subscriptions',
+    ]);
+    assert.deepEqual(h.refreshCalls, ['refresh-1', 'refresh-1']);
+    assert.equal(h.fetch.calls('/api/me')[0].headers.authorization, 'Bearer access-2');
+    assert.deepEqual(h.lines.info, ['Daily check-in complete for 2 accounts']);
+    assert.deepEqual(h.named('checkInComplete'), [{ event: 'checkInComplete', count: 2 }]);
+
+    const owner = readRecord(h.store, 'a1');
+    assert.equal(owner.isOwner, true);
+    assert.equal(owner.maxHr, 168);
+    assert.equal(owner.hrZones.length, 5);
+    assert.deepEqual(owner.hrZones[3], { zone: 4, min: 143, max: 159 });
+    assert.deepEqual(owner.devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.equal(owner.username, 'owner_rider');
+    assert.equal(owner.displayName, 'Owner');
+    assert.equal(owner.imageUrl, 'https://cdn.example.invalid/avatars/u-owner-0001.jpg');
+    assert.equal(owner.lastCheckedAt, h.clock.now());
+    assert.equal(owner.refreshToken, 'refresh-2');
+    const member = readRecord(h.store, 'a2');
+    assert.equal(member.isOwner, false);
+    assert.equal(member.devices, undefined);
+    assert.equal(member.maxHr, 190);
+    assert.deepEqual(member.hrZones, []);
+    const household = await h.store.loadAll();
+    assert.deepEqual([...household.keys()].sort(), ['a1', 'a2', 'u-member-0002']);
+    assert.deepEqual(household.get('u-member-0002'), {
+      userId: 'u-member-0002',
+      username: 'member_runner',
+      displayName: 'Member Example',
+      imageUrl: 'https://cdn.example.invalid/avatars/default.png',
+      isProfileImageDefault: true,
+      state: 'not_connected',
+    });
+
+    // The next check-in is a day later, and the learned device map now resolves the bike.
+    assert.equal(h.clock.pending().at(-1).at, due + 24 * HOUR);
+    h.poller.setSwitch(true);
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(LIST_MEMBER, apiResponse('workouts-empty'))
+      .route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    assert.equal(h.poller.triggerStates.get('t-workout'), true);
+    assert.equal(h.lines.info.some((line) => line.includes('device filtering is unavailable')), false);
+  });
+
+  it('skips an account whose check-in fails and drops one whose refresh returns invalid_grant', async () => {
+    const h = await harness({
+      config: { polling: { standbyInterval: 0 } },
+      refresh: async (token) => {
+        if (token === 'refresh-1') {
+          return { accessToken: 'access-2', refreshToken: 'refresh-2', expiresAt: Date.now() + 48 * HOUR };
+        }
+        throw new AuthError('refresh', 403, 'invalid_grant');
+      },
+      records: { a2: { refreshToken: 'refresh-dead' } },
+    });
+    h.fetch.route('/api/me', jsonResponse(503, {}));
+    h.poller.start();
+    await h.poller.checkInNow();
+    assert.deepEqual(h.lines.info, [
+      'Lifter: sign-in expired, reconnect needed (stage refresh, HTTP 403)',
+      'Daily check-in complete for 0 accounts',
+    ]);
+    assert.deepEqual(h.poller.activeAccountIds, ['a1']);
+    assert.equal(readRecord(h.store, 'a1').state, 'connected');
+    assert.equal(readRecord(h.store, 'a2').state, 'reconnect_needed');
+    assert.equal(h.lines.debug.filter((line) => line === 'Owner: daily check-in failed (HTTP 503)').length, 1);
+  });
+
+  it('uses the profile zones learned at check-in for later heart-rate samples', async () => {
+    const h = await harness({ accounts: [MEMBER], config: { triggers: [workoutTrigger(), hrTrigger({ who: MEMBER.userId })] } });
+    h.fetch.route('/api/me', apiResponse('me-member')).route('/subscriptions', apiResponse('subscriptions'));
+    h.poller.start();
+    await h.poller.checkInNow();
+    const body = apiFixture('performance-graph-heart-rate');
+    delete body.metrics.find((metric) => metric.slug === 'heart_rate').zones;
+    h.fetch.route(LIST_MEMBER, apiResponse('workout-in-progress-cycling'))
+      .route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'))
+      .route(GRAPH_CYC, jsonResponse(200, body));
+    await h.clock.advance(120_000);
+    await h.clock.advance(10_000);
+    // 152 bpm on the member's 190 max: zone 4 starts at 161, so this is zone 3.
+    assert.equal(h.named('sampleReceived').at(-1).zone, 3);
   });
 });
 

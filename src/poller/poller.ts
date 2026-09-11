@@ -11,7 +11,7 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
-import type { AccountRecord, AccountState } from '../store/account-store.js';
+import type { AccountRecord, AccountState, StoredDevice } from '../store/account-store.js';
 import {
   type DeviceMap,
   EMPTY_DEVICE_MAP,
@@ -21,6 +21,7 @@ import {
   hrZoneTargets,
   isDetectable,
   matchWorkout,
+  toStoredZones,
   zoneBounds,
   zoneForSample,
 } from './rules.js';
@@ -50,6 +51,7 @@ export interface PollerApi {
 export interface PollerStore {
   withValidToken<T>(accountId: string, fn: (accessToken: string) => Promise<T>, options?: { forceRefresh?: boolean }): Promise<T>;
   load(accountId: string): Promise<AccountRecord | undefined>;
+  loadAll(): Promise<Map<string, AccountRecord>>;
   save(accountId: string, record: AccountRecord): Promise<void>;
 }
 
@@ -125,6 +127,11 @@ export interface TriggerChangedEvent {
   on: boolean;
 }
 
+export interface CheckInCompleteEvent {
+  /** Accounts refreshed without error. */
+  count: number;
+}
+
 export interface PollerEvents {
   workoutStarted: WorkoutStartedEvent;
   workoutEnded: WorkoutEndedEvent;
@@ -133,6 +140,7 @@ export interface PollerEvents {
   switchChanged: SwitchChangedEvent;
   switchAutoOff: SwitchAutoOffEvent;
   triggerChanged: TriggerChangedEvent;
+  checkInComplete: CheckInCompleteEvent;
   stateChanged: { state: PollerState };
 }
 
@@ -146,6 +154,23 @@ export const BACKOFF_CAP_SECONDS = 60;
 export const GRAPH_EVERY_N = 5;
 /** A sample counts as stale once this many polls pass without a new one. */
 export const STALE_SAMPLE_POLLS = 2;
+
+/**
+ * Epoch milliseconds of the next occurrence of a local "HH:MM" time strictly after now, using the
+ * process time zone. A malformed time falls back to 03:00.
+ */
+export function nextLocalTime(now: number, time: string): number {
+  const match = /^(\d{2}):(\d{2})$/.exec(time);
+  const hours = match ? Number(match[1]) : 3;
+  const minutes = match ? Number(match[2]) : 0;
+  const next = new Date(now);
+  next.setHours(hours, minutes, 0, 0);
+  if (next.getTime() <= now) {
+    next.setDate(next.getDate() + 1);
+    next.setHours(hours, minutes, 0, 0);
+  }
+  return next.getTime();
+}
 
 /** The interval in seconds after backoff: doubles from the third consecutive failure, capped. */
 export function backoffInterval(baseSeconds: number, failures: number): number {
@@ -206,6 +231,7 @@ export class Poller {
   private switchOnAt: number | undefined;
   private lastWorkoutEndAt: number | undefined;
   private autoOffTimer: unknown;
+  private checkInTimer: unknown;
 
   constructor(options: PollerOptions) {
     this.config = options.config;
@@ -285,6 +311,7 @@ export class Poller {
     this.started = true;
     this.setState('standby');
     this.scheduleAll(true);
+    this.scheduleCheckIn();
   }
 
   /** Cancels every timer. */
@@ -292,6 +319,10 @@ export class Poller {
     this.started = false;
     this.generation += 1;
     this.clearAutoOff();
+    if (this.checkInTimer !== undefined) {
+      this.scheduler.clearTimer(this.checkInTimer);
+      this.checkInTimer = undefined;
+    }
     for (const runtime of this.accounts.values()) {
       this.clearAccountTimer(runtime);
     }
@@ -319,6 +350,13 @@ export class Poller {
     }
     this.emit('switchChanged', { on, reason: 'user' });
     this.applySwitchChange();
+  }
+
+  /** Runs the daily check-in now. start() schedules it at dailyCheckIn local time; tests call it directly. */
+  checkInNow(): Promise<void> {
+    const run = this.runCheckIn();
+    this.track(run);
+    return run;
   }
 
   /** When the auto-off timer will fire, or undefined while the switch is off. */
@@ -374,6 +412,120 @@ export class Poller {
     this.emit('switchAutoOff', { minutes });
     this.emit('switchChanged', { on: false, reason: 'auto' });
     this.applySwitchChange();
+  }
+
+  /* ----------------------------------------------------------------------------------------------
+   * Daily check-in (SPEC section 8.5)
+   * -------------------------------------------------------------------------------------------- */
+
+  private scheduleCheckIn(): void {
+    if (this.checkInTimer !== undefined) {
+      this.scheduler.clearTimer(this.checkInTimer);
+    }
+    const at = nextLocalTime(this.now(), this.config.advanced.dailyCheckIn);
+    this.checkInTimer = this.scheduler.setTimer(() => {
+      this.checkInTimer = undefined;
+      this.track(this.runCheckIn().finally(() => {
+        if (this.started) {
+          this.scheduleCheckIn();
+        }
+      }));
+    }, Math.max(0, at - this.now()));
+  }
+
+  /**
+   * For each connected account: refresh the token, fetch /api/me for zones, avatar, and name, and
+   * for the owner fetch subscriptions to update household profiles and devices in the store.
+   * Failures follow 8.2: invalid_grant drops the account, anything else is skipped until tomorrow.
+   */
+  private async runCheckIn(): Promise<void> {
+    let count = 0;
+    for (const runtime of [...this.accounts.values()]) {
+      const { account } = runtime;
+      try {
+        const me = await this.store.withValidToken(account.id, (token) => this.api.getMe(token), { forceRefresh: true });
+        const record = await this.store.load(account.id);
+        if (record === undefined) {
+          continue;
+        }
+        const maxHr = me.customizedMaxHeartRate ?? me.defaultMaxHeartRate ?? undefined;
+        const updated: AccountRecord = {
+          ...record,
+          userId: me.id,
+          username: me.username,
+          displayName: record.displayName ?? (`${me.firstName} ${me.lastName}`.trim() || me.username),
+          imageUrl: me.imageUrl,
+          isProfileImageDefault: me.isProfileImageDefault,
+          hrZones: toStoredZones(me.customizedHeartRateZones),
+          lastCheckedAt: this.now(),
+        };
+        if (maxHr !== undefined) {
+          updated.maxHr = maxHr;
+        }
+        account.profile = { hrZones: updated.hrZones, maxHr: updated.maxHr ?? null };
+        if (record.isOwner !== false) {
+          await this.updateHousehold(runtime, updated);
+        }
+        await this.store.save(account.id, updated);
+        count += 1;
+      } catch (error) {
+        if (error instanceof AuthError && error.code === 'invalid_grant') {
+          this.dropAccount(runtime, error.stage, error.status);
+        } else {
+          const status = error instanceof ApiError ? `HTTP ${error.status}` : error instanceof AuthError ? `stage ${error.stage}` : 'network';
+          this.log.debug(`${account.displayName}: daily check-in failed (${status})`);
+        }
+      }
+    }
+    this.log.info(`Daily check-in complete for ${count} accounts`);
+    this.emit('checkInComplete', { count });
+  }
+
+  /** Reads subscriptions for a possible owner and, when it owns one, updates household profiles and devices. */
+  private async updateHousehold(runtime: AccountRuntime, record: AccountRecord): Promise<void> {
+    const { account } = runtime;
+    const subscriptions = await this.store.withValidToken(account.id, (token) => this.api.getSubscriptions(account.userId, token));
+    const owned = subscriptions.filter((subscription) => subscription.ownerId === account.userId);
+    record.isOwner = owned.length > 0;
+    if (!record.isOwner) {
+      delete record.devices;
+      return;
+    }
+    const devices: StoredDevice[] = [];
+    for (const subscription of owned) {
+      for (const device of subscription.attachedDevices) {
+        if (!devices.some((known) => known.id === device.id)) {
+          const stored: StoredDevice = { id: device.id, name: device.name };
+          if (device.deviceType !== undefined) {
+            stored.deviceType = device.deviceType;
+          }
+          devices.push(stored);
+        }
+      }
+    }
+    record.devices = devices;
+    const deviceMap = deviceMapFromDevices(devices);
+    for (const other of this.accounts.values()) {
+      other.deviceMap = deviceMap;
+    }
+    const existing = await this.store.loadAll();
+    const knownUserIds = new Set([account.userId, ...[...existing.values()].map((entry) => entry.userId)]);
+    for (const subscription of owned) {
+      for (const user of subscription.sharedUsers) {
+        if (user.id.length === 0 || knownUserIds.has(user.id)) {
+          continue;
+        }
+        knownUserIds.add(user.id);
+        await this.store.save(user.id, {
+          userId: user.id,
+          username: user.username,
+          displayName: `${user.firstName} ${user.lastName}`.trim() || user.username,
+          imageUrl: user.imageUrl,
+          isProfileImageDefault: user.isProfileImageDefault,
+          state: 'not_connected',
+        });
+      }
+    }
   }
 
   /* ----------------------------------------------------------------------------------------------
