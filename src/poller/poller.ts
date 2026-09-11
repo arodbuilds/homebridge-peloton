@@ -13,18 +13,7 @@ import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
 import type { AccountRecord, AccountState } from '../store/account-store.js';
-import {
-  type DeviceMap,
-  EMPTY_DEVICE_MAP,
-  HoldAfterEnd,
-  HoldState,
-  type ZoneProfile,
-  hrZoneTargets,
-  isDetectable,
-  matchWorkout,
-  zoneBounds,
-  zoneForSample,
-} from './rules.js';
+import { HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, workoutMatches, zoneBounds, zoneForSample } from './rules.js';
 
 export type PollerState = 'standby' | 'scanning' | 'locked' | 'released';
 
@@ -75,8 +64,6 @@ export interface PollerOptions {
   log: PollerLog;
   now?: () => number;
   scheduler?: Scheduler;
-  /** device_type to device id, per account id. Accounts without an entry get an empty map. */
-  deviceMaps?: Map<string, DeviceMap>;
   /**
    * Called once when an account is dropped with invalid_grant. Returns the reconnected account to
    * resume polling, or undefined to leave it reconnect_needed (SPEC section 8.2).
@@ -188,7 +175,6 @@ export function backoffInterval(baseSeconds: number, failures: number): number {
 
 interface AccountRuntime {
   account: PollerAccount;
-  deviceMap: DeviceMap;
   /** The last IN_PROGRESS workout id seen; a different IN_PROGRESS id is a start. */
   lastSeenActiveId?: string;
   /** Latest detectable workout, the only workout kept per account. */
@@ -199,21 +185,17 @@ interface AccountRuntime {
   failures: number;
   timer?: unknown;
   polling: boolean;
-  /** device_type values already reported as unmappable, one info line each. */
-  deviceUnavailableLogged: Set<string>;
   /** True once this workout was reported as having no heart-rate metric. */
   noHeartRateLogged: boolean;
 }
 
-function newRuntime(account: PollerAccount, deviceMap: DeviceMap): AccountRuntime {
+function newRuntime(account: PollerAccount): AccountRuntime {
   return {
     account,
-    deviceMap,
     latestWorkout: null,
     stalePolls: 0,
     failures: 0,
     polling: false,
-    deviceUnavailableLogged: new Set(),
     noHeartRateLogged: false,
   };
 }
@@ -236,8 +218,6 @@ export class Poller {
   private readonly scheduler: Scheduler;
   private readonly accounts = new Map<string, AccountRuntime>();
   private readonly reconnect: ((accountId: string) => Promise<PollerAccount | undefined>) | undefined;
-  /** Device maps of dropped accounts, kept for a reconnect. */
-  private readonly retainedDeviceMaps = new Map<string, DeviceMap>();
   private readonly triggers: TriggerRuntime[];
   private readonly listeners = new Map<keyof PollerEvents, Listener<never>[]>();
 
@@ -266,7 +246,7 @@ export class Poller {
       clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
     };
     for (const account of options.accounts) {
-      this.accounts.set(account.id, newRuntime(account, options.deviceMaps?.get(account.id) ?? EMPTY_DEVICE_MAP));
+      this.accounts.set(account.id, newRuntime(account));
     }
     this.triggers = this.config.triggers.map((trigger) => ({
       trigger,
@@ -384,22 +364,14 @@ export class Poller {
    * Adds or replaces a connected account and puts it on the schedule. In standby or scanning the
    * household is re-staggered at once; while locked or released it joins when the workout is over.
    */
-  addAccount(account: PollerAccount, deviceMap: DeviceMap = EMPTY_DEVICE_MAP): void {
+  addAccount(account: PollerAccount): void {
     const existing = this.accounts.get(account.id);
     if (existing !== undefined) {
       this.clearAccountTimer(existing);
     }
-    this.accounts.set(account.id, newRuntime(account, deviceMap));
+    this.accounts.set(account.id, newRuntime(account));
     if (this.started && (this.currentState === 'standby' || this.currentState === 'scanning')) {
       this.scheduleAll(false);
-    }
-  }
-
-  /** Replaces the device map of one account, for example after a check-in. */
-  setDeviceMap(accountId: string, deviceMap: DeviceMap): void {
-    const runtime = this.accounts.get(accountId);
-    if (runtime !== undefined) {
-      runtime.deviceMap = deviceMap;
     }
   }
 
@@ -496,17 +468,14 @@ export class Poller {
     this.emit('checkInComplete', { count });
   }
 
-  /** Reads subscriptions for a possible owner and, when it owns one, updates household profiles and devices. */
+  /**
+   * Reads subscriptions for a possible owner and, when it owns one, updates the household profiles
+   * and the device names the settings page shows.
+   */
   private async updateHousehold(runtime: AccountRuntime, record: AccountRecord): Promise<void> {
     const { account } = runtime;
     const subscriptions = await this.store.withValidToken(account.id, (token) => this.api.getSubscriptions(account.userId, token));
-    const devices = await applyHousehold(this.store, record, subscriptions);
-    if (record.isOwner === true) {
-      const deviceMap = deviceMapFromDevices(devices);
-      for (const other of this.accounts.values()) {
-        other.deviceMap = deviceMap;
-      }
-    }
+    await applyHousehold(this.store, record, subscriptions);
   }
 
   /* ----------------------------------------------------------------------------------------------
@@ -711,7 +680,6 @@ export class Poller {
     const { account } = runtime;
     this.clearAccountTimer(runtime);
     this.accounts.delete(account.id);
-    this.retainedDeviceMaps.set(account.id, runtime.deviceMap);
     this.log.info(`${account.displayName}: sign-in expired, reconnect needed (stage ${stage}, HTTP ${status ?? 'none'})`);
     this.emit('accountStateChanged', { accountId: account.id, displayName: account.displayName, state: 'reconnect_needed', stage, status });
     if (this.reconnect !== undefined) {
@@ -737,8 +705,7 @@ export class Poller {
     if (account === undefined || !this.started) {
       return;
     }
-    this.addAccount(account, this.retainedDeviceMaps.get(accountId) ?? EMPTY_DEVICE_MAP);
-    this.retainedDeviceMaps.delete(accountId);
+    this.addAccount(account);
     this.emit('accountStateChanged', { accountId: account.id, displayName: account.displayName, state: 'connected' });
   }
 
@@ -767,12 +734,7 @@ export class Poller {
 
     for (const trigger of this.triggers) {
       if (trigger.trigger.type === 'workout') {
-        const match = matchWorkout(trigger.trigger, workout, account.userId, runtime.deviceMap);
-        if (match.deviceUnavailable && !runtime.deviceUnavailableLogged.has(workout.deviceType)) {
-          runtime.deviceUnavailableLogged.add(workout.deviceType);
-          this.log.info(`${account.displayName}: device filtering is unavailable for device_type "${workout.deviceType}", treating the device filter as any`);
-        }
-        if (match.matches) {
+        if (workoutMatches(trigger.trigger, workout, account.userId)) {
           trigger.accountId = account.id;
           this.clearTriggerTimer(trigger);
           this.applyTrigger(trigger, (trigger.hold as HoldAfterEnd).start());
@@ -930,6 +892,7 @@ export class Poller {
       this.log.debug(`${runtime.account.displayName}: poll found no workouts`);
       return;
     }
+    // device_type (the hardware model code) stays in this line so a new code can be checked against the platform rule (SPEC 8.3).
     const flags = workout.is3pFitFeedWorkout ? ' third-party import' : '';
     this.log.debug(
       `${runtime.account.displayName}: poll workout ${workout.id} ${workout.status} ${workout.fitnessDiscipline}`
@@ -952,17 +915,6 @@ export class Poller {
       (listener as Listener<PollerEvents[K]>)(payload);
     }
   }
-}
-
-/** Builds a device map from stored devices: device_type to device id, first entry wins. */
-export function deviceMapFromDevices(devices: { id: string; deviceType?: string }[] | undefined): DeviceMap {
-  const map = new Map<string, string>();
-  for (const device of devices ?? []) {
-    if (device.deviceType !== undefined && device.deviceType.length > 0 && !map.has(device.deviceType)) {
-      map.set(device.deviceType, device.id);
-    }
-  }
-  return map;
 }
 
 export type { WorkoutTriggerConfig };

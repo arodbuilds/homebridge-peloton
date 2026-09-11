@@ -5,13 +5,20 @@
  */
 
 import type { HeartRateZone, PerformanceGraph, Workout } from '../api/peloton-api.js';
-import type { HrZoneTriggerConfig, WorkoutTriggerConfig } from '../config.js';
+import type { DeviceFilter, HrZoneTriggerConfig, WorkoutTriggerConfig } from '../config.js';
 import type { StoredZone } from '../store/account-store.js';
 
-/** device_type (hardware model code) to the attached device id it stands for. */
-export type DeviceMap = ReadonlyMap<string, string>;
-
-export const EMPTY_DEVICE_MAP: DeviceMap = new Map();
+/**
+ * The workout platform each device filter stands for (SPEC section 8.3). Confirmed on the Pi ride
+ * tests: the Bike+ reports device_type home_bike_plus with platform home_bike, the Tread reports
+ * device_type prism with platform home_tread, and an Apple Health import reports device_type
+ * apple_health with platform iOS_app. device_type is the hardware model code and stays in the
+ * debug log; platform is what the filter compares.
+ */
+export const PLATFORM_BY_DEVICE: Readonly<Record<Exclude<DeviceFilter, 'any'>, string>> = {
+  bike: 'home_bike',
+  tread: 'home_tread',
+};
 
 /**
  * True when the workout takes part in detection. Third-party fitness feed imports never start or
@@ -24,45 +31,28 @@ export function isDetectable(workout: Workout | null | undefined): workout is Wo
   return workout.status === 'IN_PROGRESS' || workout.status === 'COMPLETE';
 }
 
-export type DeviceMatch = 'match' | 'no_match' | 'unavailable';
-
 /**
- * Compares a trigger's device filter with the workout. Workouts carry no device id, so device_type
- * is looked up in the map learned from attached_devices; "unavailable" means the map has no entry
- * for that device_type and the caller treats the filter as "any", logging once.
+ * Compares a trigger's device filter with the workout's platform: "any" matches every workout,
+ * "bike" matches platform home_bike, "tread" matches platform home_tread. Workouts carry no device
+ * id, so this is the whole device rule; an import or an app workout matches only "any".
  */
-export function deviceMatches(device: string, workout: Workout, deviceMap: DeviceMap): DeviceMatch {
+export function deviceMatches(device: DeviceFilter | string, workout: Workout): boolean {
   if (device === 'any') {
-    return 'match';
+    return true;
   }
-  const mapped = workout.deviceType.length > 0 ? deviceMap.get(workout.deviceType) : undefined;
-  if (mapped === undefined) {
-    return 'unavailable';
-  }
-  return mapped === device ? 'match' : 'no_match';
+  const platform = (PLATFORM_BY_DEVICE as Record<string, string | undefined>)[device];
+  return platform !== undefined && workout.platform === platform;
 }
 
-export interface WorkoutMatch {
-  matches: boolean;
-  /** True when the device filter could not be applied and was treated as "any". */
-  deviceUnavailable: boolean;
-}
-
-/** Full match result for a workout trigger, including whether the device filter was usable. */
-export function matchWorkout(trigger: WorkoutTriggerConfig, workout: Workout, accountUserId: string, deviceMap: DeviceMap): WorkoutMatch {
+/** Workout trigger matching per SPEC section 8.3: who, then activities, then device. */
+export function workoutMatches(trigger: WorkoutTriggerConfig, workout: Workout, accountUserId: string): boolean {
   if (trigger.who !== 'anyone' && trigger.who !== accountUserId) {
-    return { matches: false, deviceUnavailable: false };
+    return false;
   }
   if (trigger.activities.length > 0 && !trigger.activities.includes(workout.fitnessDiscipline)) {
-    return { matches: false, deviceUnavailable: false };
+    return false;
   }
-  const device = deviceMatches(trigger.device, workout, deviceMap);
-  return { matches: device !== 'no_match', deviceUnavailable: device === 'unavailable' };
-}
-
-/** Workout trigger matching per SPEC section 8.3: who, activities, device. */
-export function workoutMatches(trigger: WorkoutTriggerConfig, workout: Workout, accountUserId: string, deviceMap: DeviceMap): boolean {
-  return matchWorkout(trigger, workout, accountUserId, deviceMap).matches;
+  return deviceMatches(trigger.device, workout);
 }
 
 /** True when the heart-rate zone trigger targets this account. */

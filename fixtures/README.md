@@ -47,7 +47,7 @@ Plain JSON bodies, one per call and case.
 | workout-in-progress-cycling.json | GET /api/user/{id}/workouts?limit=1&sort_by=-created |
 | workout-complete-cycling.json | same, COMPLETE |
 | workout-in-progress-strength.json | same, strength |
-| workout-3p-fit-feed-running.json | same, a run synced from a third-party fitness feed (is_3p_fit_feed_workout true), which detection ignores |
+| workout-3p-fit-feed-running.json | same, a run imported from Apple Health (is_3p_fit_feed_workout true, device_type apple_health, platform iOS_app as the Pi ride tests reported), which detection ignores |
 | workouts-empty.json | same, no workouts yet |
 | workout-single-in-progress-cycling.json | GET /api/workout/{id}, the same object as a list entry, IN_PROGRESS |
 | workout-single-complete-cycling.json | same, COMPLETE |

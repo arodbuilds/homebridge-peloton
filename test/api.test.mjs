@@ -174,7 +174,8 @@ describe('getLatestWorkout', () => {
     assert.equal(workout.id, 'w-3p-0003');
     assert.equal(workout.is3pFitFeedWorkout, true);
     assert.equal(workout.isPelotonOriginatedWorkout, false);
-    assert.equal(workout.platform, 'strava');
+    assert.equal(workout.platform, 'iOS_app');
+    assert.equal(workout.deviceType, 'apple_health');
     assert.equal(workout.pelotonId, '');
     assert.deepEqual(workout.ride, { id: 'redacted', title: 'Outdoor Run', duration: 1800 });
     assert.equal('instructorId' in workout.ride, false, 'instructor id only when present');

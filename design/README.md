@@ -101,7 +101,7 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 - Name (required, default "Workout"). Caption "Shown in the Home app. Letters, numbers, spaces and apostrophes."
 - Show in HomeKit as (radio): Occupancy sensor (default) / Switch. Caption "Occupancy sensor is on while the workout is in progress. Switch behaves the same but appears as a toggle."
 - Who (select, 6 cols): Anyone on this membership (default) / each connected member by name.
-- Device (select, 6 cols): Any device (default) / Blue Door+ / Tread. Caption "Devices come from the membership."
+- Device (select, 6 cols): Any device (default) / Bike / Tread. Caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+." Clarification (SPEC 6 and 8.3): the choice is the hardware family, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
 - Activities (multi-select chips, default all, "Select all / none" links, summary "All activities" or "n of 12 selected"): Cycling, Running, Walking, Rowing, Strength, Yoga, Stretching, Meditation, Cardio, Bike bootcamp, Tread bootcamp, Row bootcamp. Chip: 31 px tall, 16 px radius; selected = `--ns-link` fill white text, unselected = 1 px `--ns-border` outline.
 - Keep on after the workout ends (seconds) (number, 6 cols, default 90). Caption "Holds the sensor on briefly so stacked classes do not turn your scene off between them."
 

@@ -75,13 +75,23 @@ Base https://api.onepeloton.com. Headers on every call: Authorization: Bearer {a
 | --- | --- | --- |
 | GET /api/me | identity, zones, avatar, devices | id, username, first_name, last_name, image_url, is_profile_image_default, customized_heart_rate_zones (array, empty when unset), default_max_heart_rate, customized_max_heart_rate, paired_devices. last_workout_at is read but stale and must not be used (see below) |
 | GET /api/user/{id}/subscriptions | household (owner only) | data[].id, data[].status ("active_normal" or "unused"), data[].owner.id, data[].max_shared_users, data[].shared_user_set[] (id, username, first_name, last_name, image_url, is_profile_image_default, last_workout_at), data[].attached_devices[] (id, name) |
-| GET /api/user/{id}/workouts?limit=1&sort_by=-created | latest workout | data[0]: id, status ("IN_PROGRESS" or "COMPLETE"), fitness_discipline, device_type, workout_type, start_time, end_time, created_at, title, name, is_peloton_originated_workout, is_3p_fit_feed_workout, platform, peloton_id, ride (id, title, duration, instructor_id when present). No device id field exists on workouts; device_type is the hardware model code (see 8.3) |
+| GET /api/user/{id}/workouts?limit=1&sort_by=-created | latest workout | data[0]: id, status ("IN_PROGRESS" or "COMPLETE"), fitness_discipline, device_type, workout_type, start_time, end_time, created_at, title, name, is_peloton_originated_workout, is_3p_fit_feed_workout, platform, peloton_id, ride (id, title, duration, instructor_id when present). No device id field exists on workouts; device_type is the hardware model code and platform is what device matching compares (see 8.3) |
 | GET /api/workout/{id} | status of the locked workout (8.2) | the same fields as one entry of the workouts list, unwrapped |
 | GET /api/workout/{id}/performance_graph?every_n=5 | live metrics for the active workout | metrics[] where slug is "heart_rate": values[] (latest sample), zones[] (slug, min_value, max_value); seconds_since_pedaling_start (array of sample offsets) |
 
 Last workout time: /api/me last_workout_at is stale (the build 2 probe returned a 2020 value against a workout from that day) and must not be used. The latest workout's created_at from the workouts list is the source for "last workout" everywhere it is shown or compared.
 
 Third-party imports: workouts with is_3p_fit_feed_workout true are runs and other activities synced in from Apple Health, Strava, or Fitbit. They appear in the workouts list with COMPLETE status and a created_at of the sync time, and can land at the top of the list while a Peloton workout is in progress. Detection ignores them (8.2).
+
+Device codes (Pi ride tests, 11 September 2026), the facts behind the device rule in 8.3:
+
+| Hardware or source | device_type | platform |
+| --- | --- | --- |
+| Bike+ | home_bike_plus | home_bike |
+| Tread | prism | home_tread |
+| Apple Health import | apple_health | iOS_app |
+
+Start latency on both rides was within one fastInterval (10 s) of the workout starting.
 
 fitness_discipline values mapped to the Activities chips: cycling, running, walking, rowing, strength, yoga, stretching, meditation, cardio, bike_bootcamp, tread_bootcamp, row_bootcamp. Unknown values are logged once at debug and never match a trigger with a restricted activity list; they do match "all activities".
 
@@ -136,7 +146,7 @@ Rules:
 - accounts[].password is optional: absent for accounts connected through the browser path. userId is filled by the plugin after the first successful connection.
 - who is "anyone" or an account userId. hrZone triggers never use "anyone".
 - activities absent or empty means all.
-- device is "any" or a device id from attached_devices.
+- device is "any", "bike", or "tread". Any other value becomes "any" with a warn line.
 - config.schema.json mirrors this shape with the defaults above and marks the custom UI.
 - Validation (config.ts): invalid values are clamped or defaulted with one warn line each and never a crash. fastInterval has a floor of 5, standbyInterval a floor of 0, holdAfterEnd and holdTime a floor of 0, zone a range of 1 to 5, fastSwitchAutoOffMinutes a floor of 1, dailyCheckIn must be HH:MM. An unknown trigger type becomes workout and an unknown accessory kind occupancy. A missing, duplicate, or unsafe id is replaced by a generated id for the run with a warn line asking the user to save the config from the settings page so the id persists. An hrZone trigger whose who is "anyone" is kept, warned about, and never turns on.
 
@@ -158,7 +168,7 @@ Path: {homebridge storagePath}/homebridge-peloton/accounts/{account id}.json, fi
 - Before refreshing, the store re-reads the account file. If another caller has already persisted a rotation with a fresh access token, that rotation is reused; a retired refresh token is never sent to Auth0.
 - On invalid_grant the store sets state reconnect_needed and lastError, and removes the dead accessToken, accessTokenExpiresAt, and refreshToken from the record. Identity fields, zones, and maxHr are kept so the settings page can still show the profile.
 - hrZones holds customized_heart_rate_zones from /api/me (empty when unset) and maxHr the customised max, else the default max. Both are the fallback for zone bounds (8.3).
-- isOwner is set by the subscriptions call at check-in (true when a subscription's owner.id is the account's userId). devices, on the owner's record only, is the union of attached_devices across the owned subscriptions, with device_type kept when Peloton sends it; the device map (8.3) is built from it at startup and refreshed at check-in.
+- isOwner is set by the subscriptions call at check-in (true when a subscription's owner.id is the account's userId). devices, on the owner's record only, is the union of attached_devices across the owned subscriptions, with device_type kept when Peloton sends it. The settings page shows the device names (10); device matching does not use them (8.3).
 - state is persisted so the settings page shows the right pill immediately after a restart.
 - Household profiles that have never connected exist in the store with state not_connected and no tokens, populated from the owner's subscriptions call. Their file is keyed by the member's userId, since no config account id exists for them yet; a member that already has a record with that userId is not duplicated.
 - Removing an account in the UI deletes its file.
@@ -184,14 +194,14 @@ One loop per platform. All timing uses an injectable clock so tests can drive it
 - While locked, the poller polls GET /api/workout/{id} for the locked workout's status instead of the list, so a synced import arriving mid-workout cannot end it. Once that call returns COMPLETE, the end is processed and the next cycle returns to the list, which is also where a stacked class shows up.
 - Ended: status COMPLETE for the locked workout from GET /api/workout/{id}. A new IN_PROGRESS id in the list after the locked workout completes is an end followed by a start (stacked classes). When the locked account drops out of polling (invalid_grant), the workout is treated as ended so no sensor stays on.
 - A workout already IN_PROGRESS at plugin startup counts as started on the first poll.
-- Every poll result is logged at debug with the workout id, status, discipline, device_type, and platform, so the ride test can fill the device map (8.3).
+- Every poll result is logged at debug with the workout id, status, discipline, device_type, and platform, so a new hardware code can be checked against the platform rule (8.3).
 - Transient API failures (network, 5xx, 429, a second 401 after a refresh) keep the last known state and retry on the next tick with backoff: from the third consecutive failure the account's interval doubles (20 s, 40 s, 60 s on a 10 s base) up to 60 s, or the base interval when that is longer, until a success. The third failure logs one warn line with the HTTP status and the new interval; other failures log at debug. A 401 goes through refresh once; a refresh failure with invalid_grant marks the account reconnect_needed, drops it from polling, logs the sign-in expired line, and raises accountStateChanged for the attention sensor.
 - Re-login after invalid_grant: when the dropped account has a password in config, the platform attempts login() once, not in a loop. Success runs the connect flow (10), logs the Connected line, puts the account back on the schedule, and raises accountStateChanged with state connected so the attention sensor clears. Failure logs the sign-in failed line once and leaves the account reconnect_needed; the attention event stands until the settings page connects it or the next restart signs it in.
 - The poller keeps only the latest workout and the latest sample offset per account, and raises events for the platform: workoutStarted, workoutEnded, sampleReceived, accountStateChanged, switchChanged, switchAutoOff, triggerChanged, checkInComplete.
 
 ### 8.3 Trigger evaluation (pure, in rules.ts)
 
-Workout trigger matches when: who is "anyone" or equals the account userId; activities is empty or contains the workout's fitness_discipline; device is "any" or matches. Device matching: workouts carry no device id field (settled by the build 2 probe); device_type is the hardware model code, so the poller looks the workout's device_type up in a per-account map from device_type to device id, learned from attached_devices (device_type is kept when the subscriptions call carries it) and stored on the owner's record (7). When the map has no entry for that device_type, the poller logs once per account and device_type at info that device filtering is unavailable for it and treats the filter as "any". The who and activities checks run first, so a workout they exclude never triggers that line.
+Workout trigger matches when: who is "anyone" or equals the account userId; activities is empty or contains the workout's fitness_discipline; device is "any" or matches. Device matching is by the workout's platform: "bike" matches platform home_bike and "tread" matches platform home_tread; "any" matches every workout. Workouts carry no device id field (settled by the build 2 probe) and device_type is the hardware model code (home_bike_plus, prism), which stays in the debug poll line but is not compared. App workouts (platform ios) and imports (platform iOS_app) match only "any". The who and activities checks run first.
 
 The sensor is on from start until end plus holdAfterEnd seconds. A new matching workout during the hold keeps it on without a gap. Trigger changes are logged and raised as events at the moment they happen: holds run on their own timers, not on the next poll.
 
@@ -205,7 +215,7 @@ Heart-rate zone trigger: from each performance_graph poll take the latest heart_
 
 ### 8.5 Daily check-in
 
-At dailyCheckIn local time (the process time zone), and again every day after: for each connected account refresh the token, fetch /api/me (zones, avatar, name), and for the owner fetch subscriptions to update household profiles and devices in the store and the device map. Subscriptions are read for every account whose owner status is unknown; the first check-in settles isOwner. Runs even when standbyInterval is 0. Failures follow 8.2: invalid_grant drops the account, anything else skips it until the next check-in. Ends with the check-in log line counting the accounts refreshed without error.
+At dailyCheckIn local time (the process time zone), and again every day after: for each connected account refresh the token, fetch /api/me (zones, avatar, name), and for the owner fetch subscriptions to update household profiles and devices in the store. Subscriptions are read for every account whose owner status is unknown; the first check-in settles isOwner. Runs even when standbyInterval is 0. Failures follow 8.2: invalid_grant drops the account, anything else skips it until the next check-in. Ends with the check-in log line counting the accounts refreshed without error.
 
 ### 8.6 Attention needed sensor
 
@@ -265,7 +275,6 @@ Info level, one line each, never more than one per event:
 - "Daily check-in complete for {n} accounts"
 - "{displayName}: sign-in failed at stage {stage}, HTTP {status}; use the settings page to connect", once per failed startup sign-in or re-login
 - "{displayName}: reconnect needed, not polling until the account is connected again" and "{displayName}: not connected, not polling", once per skipped account at startup
-- "{displayName}: device filtering is unavailable for device_type "{device_type}", treating the device filter as any", once per account and device_type
 - "{displayName}: no heart-rate data for this workout", once per workout
 
 Warn level: config values clamped or defaulted (6), the third consecutive poll failure with its HTTP status and the backoff interval (8.2), a profile fetch that fails after a successful sign-in (10).
@@ -297,10 +306,8 @@ Debug level: each poll result with workout id, status, discipline, device_type, 
 ## 15. Open items to settle during beta
 
 1. Whether Auth0 presents a verification-code step on any household account; if so, verification_required detection needs a fixture.
-2. Real-world start latency at fastInterval 10 with four accounts staggered.
-3. The device_type and platform codes of the bike and the tread as the workouts list reports them, and whether attached_devices carries device_type for both. The subscriptions fixture assumes device_type "home_bike_plus" for the Bike+; the ride test fills the map from the debug poll lines (8.2). Until a code is mapped, device filtering for that hardware is treated as "any" (8.3).
 
-Resolved during builds 1 and 2 and folded into the body: workouts carry no device id field (4.2, 8.3); performance_graph zone bounds, seconds_since_pedaling_start, and empty customized_heart_rate_zones (4.2, 8.3); the Auth0 tenant, connection, CSRF handling, redirect chain, and login page config (4.1); /api/me last_workout_at is stale (4.2, 10).
+Resolved during builds 1 to 3 and folded into the body: workouts carry no device id field (4.2, 8.3); performance_graph zone bounds, seconds_since_pedaling_start, and empty customized_heart_rate_zones (4.2, 8.3); the Auth0 tenant, connection, CSRF handling, redirect chain, and login page config (4.1); /api/me last_workout_at is stale (4.2, 10); start latency was within one fast interval on both Pi rides (4.2); the device_type and platform codes of the Bike+, the Tread, and an Apple Health import are in the table in 4.2, and device matching compares the platform, so the device_type map and the "device filtering is unavailable" path are gone (6, 8.3, 11).
 
 ### Build 2 clarifications
 
@@ -311,9 +318,9 @@ Each is a clarification to this document, not a change to the decisions in secti
 - 8.1: a released state between locked and scanning or standby, while holds run; the exact immediate-cycle and stagger behaviour.
 - 8.2: the poller's event list, including triggerChanged, switchChanged, and checkInComplete beyond the five in the build brief, because the poller owns the hold timers and the accessories need the computed trigger state; the backoff schedule and its one warn line; a dropped locked account ends its workout; one re-login after invalid_grant through a reconnect hook the platform supplies.
 - 10: the connect flow lives in store/account-connect.ts and is shared by the startup sign-in, the re-login, and (in build 3) the settings page; the platform signs in accounts with credentials at startup; the owner is settled from subscriptions.
-- 8.3: sample freshness is judged by the last seconds_since_pedaling_start offset; hold transitions run on timers; the device map is per account but built from the household's devices for every account.
+- 8.3: sample freshness is judged by the last seconds_since_pedaling_start offset; hold transitions run on timers.
 - 8.5: the check-in runs every day, settles isOwner, and runs with standby 0.
 - 9: the UUID seed strings, the fixed serials, the attention sensor name, and cleanup of the two fixed accessories when config turns them off.
-- 11: four startup and once-per-condition info lines added (sign-in failed, the two skip lines, device filtering, no heart-rate data); warn lines listed; debug lines printed at info under config.debug.
+- 11: startup and once-per-condition info lines added (sign-in failed, the two skip lines, no heart-rate data); warn lines listed; debug lines printed at info under config.debug.
 - 13: hap-nodejs is a dev dependency pinned to Homebridge's version for the accessory and platform tests.
 - config.schema.json still carries only the platform name; it mirrors the full shape when the settings page arrives in build 3.

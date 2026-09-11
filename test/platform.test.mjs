@@ -92,7 +92,7 @@ const CONFIG = {
     { id: 'a3', email: 'other@example.com', displayName: 'Other' },
   ],
   triggers: [
-    { id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', device: 'dev-bike-0001' },
+    { id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', device: 'bike' },
     { id: 't2', type: 'workout', name: 'Strength', accessory: 'switch', activities: ['strength'] },
   ],
   polling: { fastSwitch: true, standbyInterval: 120 },
@@ -320,7 +320,7 @@ describe('startup sign-in', () => {
 });
 
 describe('wiring', () => {
-  it('polls the connected account with the stored device map and drives the sensors and the switch', async () => {
+  it('polls the connected account and drives the sensors and the switch', async () => {
     const fetch = createRoutedFetch();
     fetch.route('/api/user/u-owner-0001/workouts', apiResponse('workout-in-progress-cycling'))
       .route(/\/api\/workout\/w-cyc-0001$/, apiResponse('workout-single-in-progress-cycling'));
@@ -334,7 +334,6 @@ describe('wiring', () => {
       Characteristic.OccupancyDetected.OCCUPANCY_DETECTED,
     );
     assert.equal(strength.getService(Service.Switch).getCharacteristic(Characteristic.On).value, false);
-    assert.equal(log.lines.info.some((line) => line.includes('device filtering is unavailable')), false, 'the stored device map resolves the bike');
     assert.deepEqual(log.lines.info.slice(2), ['Alex: workout started (cycling, 30 min Power Zone Ride)', 'Workout: on']);
 
     const fast = platform.accessories.get(fastPollingSwitchUuid(hap));

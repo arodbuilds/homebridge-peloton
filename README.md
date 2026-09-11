@@ -30,7 +30,7 @@ Add a platform block to config.json. This example has one account and one Workou
 ```
 
 - `accounts[].id` and `triggers[].id` identify the account store file and the HomeKit accessory. Keep them stable; the settings page generates them in build 3, and until then any short unique string works. A missing id is generated for the run with a warning.
-- A Workout trigger is on while a matching workout is in progress and for `holdAfterEnd` seconds after it ends. `who` is "anyone" or an account userId, `activities` is empty for all activities or a list such as `["cycling", "running"]`, `device` is "any" or a device id from the household.
+- A Workout trigger is on while a matching workout is in progress and for `holdAfterEnd` seconds after it ends. `who` is "anyone" or an account userId, `activities` is empty for all activities or a list such as `["cycling", "running"]`, `device` is "any", "bike" (a ride on the Bike or Bike+), or "tread" (a workout on the Tread or Tread+); it is matched by the platform the workout was recorded on.
 - A heart-rate zone trigger looks like `{ "id": "t2", "type": "hrZone", "name": "Zone 4 or higher", "who": "<userId>", "zone": 4, "holdTime": 20 }` and is on once the rider has been at or above the zone for `holdTime` seconds.
 - `accessory` is "occupancy" (default) or "switch". Both kinds are read-only sensors in effect.
 - `polling.fastInterval` is in seconds with a floor of 5; `standbyInterval` may be 0 for no polling while the Fast polling switch is off.

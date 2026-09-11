@@ -1,6 +1,6 @@
 /**
- * The Peloton platform: loads config, opens the account store, builds the device map, constructs the
- * poller with the real clock, registers accessories, and connects poller events to them.
+ * The Peloton platform: loads config, opens the account store, constructs the poller with the real
+ * clock, registers accessories, and connects poller events to them.
  * Info log lines are the ones SPEC section 11 lists and nothing more.
  */
 
@@ -13,8 +13,7 @@ import { TriggerSensor } from './accessories/trigger-sensor.js';
 import { ApiError, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from './api/peloton-api.js';
 import { AuthError, login } from './auth/peloton-auth.js';
 import { type AccountConfig, type PelotonConfig, parseConfig } from './config.js';
-import { Poller, type PollerAccount, type PollerLog, type Scheduler, deviceMapFromDevices } from './poller/poller.js';
-import type { DeviceMap } from './poller/rules.js';
+import { Poller, type PollerAccount, type PollerLog, type Scheduler } from './poller/poller.js';
 import { PLATFORM_NAME, PLUGIN_NAME, PLUGIN_VERSION } from './settings.js';
 import { type ConnectDependencies, type LoginFn, connectAccount } from './store/account-connect.js';
 import { type AccountRecord, AccountStore } from './store/account-store.js';
@@ -78,8 +77,6 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
     const records = await this.store.loadAll();
 
     const accounts = this.selectAccounts(config, records);
-    const deviceMap = this.buildDeviceMap(records);
-    const deviceMaps = new Map<string, DeviceMap>(accounts.map((account) => [account.id, deviceMap]));
 
     this.registerAccessories();
 
@@ -103,7 +100,6 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       log: pollerLog,
       now: this.deps.now,
       scheduler: this.deps.scheduler,
-      deviceMaps,
       reconnect: (accountId) => this.reconnect(accountId),
     });
     this.wireEvents(records);
@@ -201,12 +197,6 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       accounts.push({ id: account.id, userId: record.userId, displayName, profile });
     }
     return accounts;
-  }
-
-  /** device_type to device id from every stored household device; the household shares its hardware. */
-  private buildDeviceMap(records: Map<string, AccountRecord>): DeviceMap {
-    const devices = [...records.values()].flatMap((record) => record.devices ?? []);
-    return deviceMapFromDevices(devices);
   }
 
   /** Creates or refreshes every accessory the config wants and unregisters the rest. */
