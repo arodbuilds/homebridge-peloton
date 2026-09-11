@@ -94,17 +94,26 @@ describe('triggers', () => {
     assert.equal(newTrigger('hrZone').who, '');
   });
 
-  it('writes all activities as an empty list and a subset as given', () => {
+  it('reads unset or empty activities as every activity selected, writes an all-selected set as an empty list, and a subset as given', () => {
     const config = readConfig({
-      triggers: [{ id: 't1', type: 'workout', name: 'Workout' }, { id: 't2', type: 'workout', name: 'Rides', activities: ['cycling'], device: 'bike' }],
+      triggers: [
+        { id: 't1', type: 'workout', name: 'Workout' },
+        { id: 't2', type: 'workout', name: 'Rides', activities: ['cycling'], device: 'bike' },
+        { id: 't3', type: 'workout', name: 'Empty list', activities: [] },
+      ],
     });
-    assert.deepEqual(config.triggers[0].activities, []);
+    assert.deepEqual(config.triggers[0].activities, [...ACTIVITIES]);
+    assert.deepEqual(config.triggers[2].activities, [...ACTIVITIES]);
     const exported = exportConfig(config).triggers;
     assert.deepEqual(exported[0], {
       id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', activities: [], device: 'any', holdAfterEnd: 90,
     });
     assert.deepEqual(exported[1].activities, ['cycling']);
     assert.equal(exported[1].device, 'bike');
+    assert.deepEqual(exported[2].activities, []);
+    // Deselecting one chip writes the other eleven, so the plugin restricts the trigger.
+    config.triggers[0].activities = ACTIVITIES.filter((activity) => activity !== 'cycling');
+    assert.equal(exportConfig(config).triggers[0].activities.length, 11);
   });
 
   it('duplicates with a new id and a copy name that dodges existing names', () => {

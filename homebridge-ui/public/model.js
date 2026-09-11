@@ -105,10 +105,12 @@ function readTrigger(raw, seen) {
   if (type === 'hrZone') {
     return { ...base, zone: Math.min(5, Math.max(1, Math.round(num(record.zone, DEFAULTS.zone)))), holdTime: num(record.holdTime, DEFAULTS.holdTime) };
   }
-  const activities = Array.isArray(record.activities) ? record.activities.filter((entry) => typeof entry === 'string' && ACTIVITIES.includes(entry)) : [];
+  // activities absent or empty means all (SPEC section 6): every chip starts selected, and exportTrigger
+  // writes an all-selected set back as an empty list.
+  const listed = Array.isArray(record.activities) ? record.activities.filter((entry) => typeof entry === 'string' && ACTIVITIES.includes(entry)) : [];
   return {
     ...base,
-    activities: [...new Set(activities)],
+    activities: listed.length === 0 ? [...ACTIVITIES] : [...new Set(listed)],
     device: DEVICES.includes(record.device) ? record.device : 'any',
     holdAfterEnd: num(record.holdAfterEnd, DEFAULTS.holdAfterEnd),
   };
