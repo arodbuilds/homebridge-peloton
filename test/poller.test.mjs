@@ -572,6 +572,100 @@ describe('failures', () => {
   });
 });
 
+describe('fast polling switch auto-off', () => {
+  const MINUTE = 60_000;
+
+  it('turns the switch off after fastSwitchAutoOffMinutes with no workout, logs it, and raises the event', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, apiResponse('workouts-empty'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    assert.equal(h.poller.autoOffAt, h.clock.now() + 120 * MINUTE);
+    await h.clock.advance(120 * MINUTE - 1);
+    assert.equal(h.poller.switchOn, true);
+    await h.clock.advance(1);
+    assert.equal(h.poller.switchOn, false);
+    assert.equal(h.poller.state, 'standby');
+    assert.equal(h.poller.autoOffAt, undefined);
+    assert.deepEqual(h.named('switchAutoOff'), [{ event: 'switchAutoOff', minutes: 120 }]);
+    assert.deepEqual(h.named('switchChanged').map((event) => [event.on, event.reason]), [[true, 'user'], [false, 'auto']]);
+    assert.equal(h.lines.info.at(-1), 'Fast polling switch turned off automatically after 120 minutes');
+    // Back in standby: the immediate cycle ran, then the standby interval applies.
+    const scans = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(119_000);
+    assert.equal(h.fetch.count(LIST_OWNER), scans);
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), scans + 1);
+  });
+
+  it('anchors the timer to the later of switch-on and the last workout end', async () => {
+    const h = await harness({ accounts: [OWNER], config: { advanced: { fastSwitchAutoOffMinutes: 30 } } });
+    h.fetch.route(LIST_OWNER, apiResponse('workouts-empty'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    const switchOnAt = h.clock.now();
+    await h.clock.advance(10 * MINUTE);
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    await h.clock.advance(10_000);
+    assert.equal(h.poller.state, 'locked');
+    await h.clock.advance(15 * MINUTE);
+    h.fetch.route(WORKOUT_CYC, apiResponse('workout-single-complete-cycling')).route(LIST_OWNER, apiResponse('workout-complete-cycling'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 1);
+    const endedAt = h.clock.now();
+    assert.equal(h.poller.autoOffAt, endedAt + 30 * MINUTE);
+    await h.clock.advance(switchOnAt + 30 * MINUTE - h.clock.now());
+    assert.equal(h.poller.switchOn, true, 'the original 30 minutes from switch-on must not turn it off');
+    await h.clock.advance(endedAt + 30 * MINUTE - h.clock.now() - 1);
+    assert.equal(h.poller.switchOn, true);
+    await h.clock.advance(1);
+    assert.equal(h.poller.switchOn, false);
+    assert.equal(h.poller.state, 'standby');
+  });
+
+  it('counts from switch-on when the last workout ended earlier', async () => {
+    const h = await harness({ accounts: [OWNER], config: { advanced: { fastSwitchAutoOffMinutes: 30 } } });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    h.poller.start();
+    await h.clock.advance(0);
+    h.fetch.route(WORKOUT_CYC, apiResponse('workout-single-complete-cycling')).route(LIST_OWNER, apiResponse('workout-complete-cycling'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 1);
+    await h.clock.advance(10 * MINUTE);
+    h.poller.setSwitch(true);
+    assert.equal(h.poller.autoOffAt, h.clock.now() + 30 * MINUTE);
+  });
+
+  it('keeps following a locked workout when the timer fires, then goes to standby after the end', async () => {
+    const h = await harness({ accounts: [OWNER], config: { advanced: { fastSwitchAutoOffMinutes: 1 } } });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    await h.clock.advance(MINUTE);
+    assert.equal(h.poller.switchOn, false);
+    assert.equal(h.poller.state, 'locked');
+    h.fetch.route(WORKOUT_CYC, apiResponse('workout-single-complete-cycling')).route(LIST_OWNER, apiResponse('workout-complete-cycling'));
+    await h.clock.advance(10_000);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby');
+  });
+
+  it('cancels the timer when the switch is turned off by hand or the poller stops', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, apiResponse('workouts-empty'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    h.poller.setSwitch(false);
+    await h.clock.advance(121 * MINUTE);
+    assert.deepEqual(h.named('switchAutoOff'), []);
+    h.poller.setSwitch(true);
+    h.poller.stop();
+    assert.deepEqual(h.clock.pending(), []);
+  });
+});
+
 describe('stop', () => {
   it('cancels every timer', async () => {
     const h = await harness();

@@ -203,6 +203,9 @@ export class Poller {
   private generation = 0;
   private started = false;
   private readonly inFlight = new Set<Promise<void>>();
+  private switchOnAt: number | undefined;
+  private lastWorkoutEndAt: number | undefined;
+  private autoOffTimer: unknown;
 
   constructor(options: PollerOptions) {
     this.config = options.config;
@@ -288,6 +291,7 @@ export class Poller {
   stop(): void {
     this.started = false;
     this.generation += 1;
+    this.clearAutoOff();
     for (const runtime of this.accounts.values()) {
       this.clearAccountTimer(runtime);
     }
@@ -306,12 +310,23 @@ export class Poller {
     }
     this.switchIsOn = on;
     if (on) {
+      this.switchOnAt = this.now();
+      this.armAutoOff();
       this.log.info(`Fast polling switch on: scanning ${this.accounts.size} accounts every ${this.config.polling.fastInterval}s`);
     } else {
+      this.clearAutoOff();
       this.log.info('Fast polling switch off');
     }
     this.emit('switchChanged', { on, reason: 'user' });
     this.applySwitchChange();
+  }
+
+  /** When the auto-off timer will fire, or undefined while the switch is off. */
+  get autoOffAt(): number | undefined {
+    if (!this.switchIsOn) {
+      return undefined;
+    }
+    return Math.max(this.switchOnAt ?? 0, this.lastWorkoutEndAt ?? 0) + this.config.advanced.fastSwitchAutoOffMinutes * 60_000;
   }
 
   /** Replaces the device map of one account, for example after a check-in. */
@@ -320,6 +335,45 @@ export class Poller {
     if (runtime !== undefined) {
       runtime.deviceMap = deviceMap;
     }
+  }
+
+  /* ----------------------------------------------------------------------------------------------
+   * Fast polling switch auto-off (SPEC section 8.4)
+   * -------------------------------------------------------------------------------------------- */
+
+  /**
+   * Arms the auto-off timer for fastSwitchAutoOffMinutes after the later of the switch turning on
+   * and the last workout ending. Called on switch-on and on every workout end while the switch is on.
+   */
+  private armAutoOff(): void {
+    this.clearAutoOff();
+    const at = this.autoOffAt;
+    if (at === undefined) {
+      return;
+    }
+    this.autoOffTimer = this.scheduler.setTimer(() => {
+      this.autoOffTimer = undefined;
+      this.autoOff();
+    }, Math.max(0, at - this.now()));
+  }
+
+  private clearAutoOff(): void {
+    if (this.autoOffTimer !== undefined) {
+      this.scheduler.clearTimer(this.autoOffTimer);
+      this.autoOffTimer = undefined;
+    }
+  }
+
+  private autoOff(): void {
+    if (!this.switchIsOn) {
+      return;
+    }
+    const minutes = this.config.advanced.fastSwitchAutoOffMinutes;
+    this.switchIsOn = false;
+    this.log.info(`Fast polling switch turned off automatically after ${minutes} minutes`);
+    this.emit('switchAutoOff', { minutes });
+    this.emit('switchChanged', { on: false, reason: 'auto' });
+    this.applySwitchChange();
   }
 
   /* ----------------------------------------------------------------------------------------------
@@ -588,6 +642,10 @@ export class Poller {
     this.lockedAccountId = undefined;
     this.lockedWorkoutId = undefined;
     this.releasedAccountId = account.id;
+    this.lastWorkoutEndAt = this.now();
+    if (this.switchIsOn) {
+      this.armAutoOff();
+    }
     this.log.info(`${account.displayName}: workout ended`);
     this.emit('workoutEnded', { accountId: account.id, userId: account.userId, displayName: account.displayName, workoutId });
     for (const trigger of this.triggers) {
