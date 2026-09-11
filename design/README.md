@@ -98,7 +98,7 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 **Body**: 12-column grid, 8 px column gap, 16 px between fields; every cell full width below 600 px.
 
 **Workout**
-- Name (required, default "Workout"). Caption "Shown in the Home app. Letters, numbers, spaces and apostrophes."
+- Name (required, prefilled "Workout" on a new card, no placeholder). Caption "Shown in the Home app. Letters, numbers, spaces and apostrophes."
 - Show in HomeKit as (radio): Occupancy sensor (default) / Switch. Caption "Occupancy sensor is on while the workout is in progress. Switch behaves the same but appears as a toggle."
 - Who (select, 6 cols): Anyone on this membership (default) / each connected member by name.
 - Device (select, 6 cols): Any device (default) / Bike / Tread. Caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+." Clarification (SPEC 6 and 8.3): the choice is the hardware family, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
@@ -106,7 +106,7 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 - Keep on after the workout ends (seconds) (number, 6 cols, default 90). Caption "Holds the sensor on briefly so stacked classes do not turn your scene off between them."
 
 **Heart-rate zone**
-- Name (required, default "Zone 4 or higher").
+- Name (required, prefilled "Zone 4 or higher" on a new card, no placeholder; the value follows the chosen zone, "Zone 3 or higher" when zone 3 is picked, until the user edits the name).
 - Show in HomeKit as: Occupancy sensor / Switch.
 - Who (select, 6 cols): connected members only, no Anyone. Caption "Zones come from this member's Peloton profile."
 - Zone at or above (select 1 to 5, 3 cols, default 4).
@@ -179,6 +179,12 @@ The second pass in Chrome on the Pi, with the live shape of the membership call 
 - Household cards: the name is the membership's name field for the member, one string; there is no first name or last name. The username stands in when the name is empty.
 - Freshness: the page shows the membership as the plugin last read it. /status re-reads it when that read is more than an hour old (SPEC 10), so a page opened after an upgrade or a change on the membership shows current names and devices without waiting for the daily check-in.
 
+## Clarifications from build 4
+The last Chrome pass through the page on the Pi (Homebridge UI 5.29) and the release preparation settled these.
+- Iframe height: the Homebridge UI wraps the page in its own document inside a modal iframe and sizes the iframe to the body's scrollHeight plus 10 px whenever the page reports it. The banner's 16 px top margin collapsed through the container and the body, so the document was 16 px taller than that measure and the iframe scrolled on its own by the difference, with wheel scrolling sticking at the boundary. html and body are margin 0 and overflow hidden, the container contains its margins (`display: flow-root`), and the page asks the host to size the iframe (fixScrollHeight) after every section render and every summary box change. The banner keeps its 16 px top margin and the container its `padding: 0 16px 16px`; in headless Chromium with the host stylesheet, documentElement.scrollHeight equals clientHeight in both themes and at phone width.
+- Dark theme link buttons: the host's dark themes grey every `.btn-link` with an important rule, so Connect, Test, Add account, Edit, Duplicate trigger, and the Show help toggle rendered grey while Remove kept its red. The page's link buttons and the callout link now carry a scoped rule of the same weight in `--ns-link`, Cancel and the help toggle in `--ns-secondary`, Remove in `--ns-danger`, and the summary box toggle inherits the box colour. The palette is unchanged; only the rule's weight is.
+- Trigger names: a new card starts with the Name prefilled, "Workout" or "Zone 4 or higher", instead of the "e.g." placeholder, so the header reads the name at once and a card added by mistake still validates. A zone card's name follows the chosen zone until the user edits the name; a duplicate's name is its own. Adding a second card of the same type therefore starts with a duplicate name, which the card holds back as a fresh card until a field is touched.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 
@@ -198,7 +204,8 @@ Every grid cell is full width. Account cards stack: pill and links move under th
 - Banner artwork colours (the one place the plugin carries colour): field #6E2220, mark #F2F2F3.
 
 ## Assets (`assets/`)
-- `peloton-banner.png` 1280 × 320 page banner. **Its tagline is out of date** (spec round two, Prompt A): regenerate with "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones." on the same layout; no em dash.
+- `peloton-banner.png` 1280 × 320 page banner, regenerated in build 4 on the same layout (mark, divider, wordmark) with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones."; no em dash. The settings page ships its own copy under `homebridge-ui/public/`.
+- `screenshots/` the five masked settings page screenshots the README walks through: accounts, trigger-workout, trigger-zone, polling, settings.
 - `peloton-footer.svg` 24-grid footer glyph, currentColor, render at 20 px. Inline it so it follows the host theme.
 - `peloton-mark.svg` mark alone; `peloton-dark.svg` / `peloton-light.svg` 192 tiles; `peloton-192.png`, `peloton-512.png` plugin listing rasters.
 - `ICONS.md` geometry and colour notes for the mark.

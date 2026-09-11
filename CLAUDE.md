@@ -7,7 +7,7 @@ Working rules for homebridge-peloton. Read SPEC.md in full before changing anyth
 - SPEC.md governs the plugin: behaviour, module boundaries, API contract, storage, logging, privacy, tests, and release.
 - design/README.md governs the settings page: layout, copy, and states.
 - When the two disagree, SPEC.md wins and design/README.md gets a clarification in the same PR.
-- Nothing in SPEC.md changes without a note in SPEC.md section 15.
+- Nothing in SPEC.md changes without a note in SPEC.md section 16 (clarification notes); section 15 holds only the open items.
 
 ## Rules
 

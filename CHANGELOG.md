@@ -40,7 +40,7 @@ First beta, to the npm beta tag. Build 4 of 4: banner, README, release prep, and
 
 - New trigger cards start with the Name prefilled, "Workout" or "Zone 4 or higher", instead of a placeholder. A Heart-rate zone card's name follows the chosen zone until the name is edited.
 - package.json description and keywords for the npm listing (homebridge, homekit, workout, heart-rate, fitness alongside homebridge-plugin, supports-hap, and peloton).
-- SPEC sections 10, 13, 14, and 15 and the design README fold build 4 in; section 15 lists what stays open after beta.1.
+- SPEC sections 10, 13, 14, 15, and 16 and the design README fold build 4 in; section 15 lists only what stays open after beta.1 and the clarification notes move to section 16.
 - A trigger's device is `any`, `bike`, or `tread`, matched by the workout's platform (`home_bike` for the Bike and Bike+, `home_tread` for the Tread), the codes the Pi ride tests reported. The device_type map learned from attached_devices and the "device filtering is unavailable" log line are gone; device_type stays in the debug poll line. Any other device value becomes `any` with a warn line.
 - The third-party import fixture is an Apple Health import (device_type `apple_health`, platform `iOS_app`), as the Pi reported it.
 - SPEC sections 6, 7, 8.3, 9, 10, and 15 fold build 3 in; section 15 keeps the one open item.
