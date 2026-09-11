@@ -43,7 +43,7 @@ Plain JSON bodies, one per call and case.
 | --- | --- |
 | me-owner.json | GET /api/me for the subscription owner, customized_heart_rate_zones populated |
 | me-member.json | GET /api/me for a household member, customized_heart_rate_zones empty |
-| subscriptions.json | GET /api/user/{id}/subscriptions with two entries, one unused |
+| subscriptions.json | GET /api/user/{id}/subscriptions with two entries, one unused, in the live shape of the second Chrome pass on the Pi: attached_devices as device_id, device_name (null for the Guide), device_group, and last_attached_at; shared_user_set with name as one string; bike_device_name and tread_device_name at the top level |
 | workout-in-progress-cycling.json | GET /api/user/{id}/workouts?limit=1&sort_by=-created |
 | workout-complete-cycling.json | same, COMPLETE |
 | workout-in-progress-strength.json | same, strength |

@@ -99,14 +99,20 @@ describe('getSubscriptions', () => {
     assert.equal(active.status, 'active_normal');
     assert.equal(active.ownerId, 'u-owner-0001');
     assert.equal(active.maxSharedUsers, 20);
-    assert.deepEqual(active.attachedDevices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    // The live shape (second Chrome pass on the Pi): device_id, device_name (null for the Guide), device_group.
+    assert.deepEqual(active.attachedDevices, [
+      { id: 'dev-bike-0001', name: 'Bike+', group: 'bike' },
+      { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+    ]);
+    // shared_user_set carries name as one string and no first_name, last_name, or is_profile_image_default.
     assert.deepEqual(active.sharedUsers, [
       {
-        id: 'u-member-0002', username: 'member_runner', firstName: 'Member', lastName: 'Example',
-        imageUrl: 'https://cdn.example.invalid/avatars/default.png', isProfileImageDefault: true, lastWorkoutAt: null,
+        id: 'u-member-0002', username: 'member_runner', displayName: 'Member Example',
+        imageUrl: 'https://cdn.example.invalid/avatars/default.png', isProfileImageDefault: false, lastWorkoutAt: null,
       },
       {
-        id: 'u-member-0003', username: 'member_lifter', firstName: 'Lifter', lastName: 'Example',
+        id: 'u-member-0003', username: 'member_lifter', displayName: 'Lifter Example',
         imageUrl: 'https://cdn.example.invalid/avatars/u-member-0003.jpg', isProfileImageDefault: false, lastWorkoutAt: 1788900000,
       },
     ]);
@@ -121,22 +127,37 @@ describe('getSubscriptions', () => {
     assert.equal(fetchImpl.requests[0].url, `${PELOTON_API_BASE}/api/user/a%2Fb/subscriptions`);
   });
 
-  it('keeps a device whose id is numeric or missing, reads numeric user ids as strings, and drops an entry with neither id nor name', async () => {
+  it('reads numeric ids as strings, a null or missing device_name as null, a missing device_group as empty, and drops an empty entry', async () => {
     const body = apiFixture('subscriptions');
     body.data[0].owner.id = 777;
     body.data[0].shared_user_set[0].id = 42;
     body.data[0].attached_devices = [
-      { id: 12345, name: 'Blue Door+', device_type: 'home_bike_plus' },
-      { name: 'Tread', device_type: 'prism' },
-      { device_type: 'ghost' },
+      { device_id: 12345, device_name: 'Blue Door+', device_group: 'bike', last_attached_at: 1788950000 },
+      { device_id: 'dev-guide-0001', device_group: 'guide', last_attached_at: 1788930000 },
+      { device_id: 'dev-x', device_name: 'Tread' },
+      { device_name: null, device_group: 'tread' },
+      { last_attached_at: 1 },
     ];
     const [active] = await getSubscriptions('777', TOKEN, createFakeFetch([jsonResponse(200, body)]));
     assert.equal(active.ownerId, '777');
     assert.equal(active.sharedUsers[0].id, '42');
     assert.deepEqual(active.attachedDevices, [
-      { id: '12345', name: 'Blue Door+', deviceType: 'home_bike_plus' },
-      { id: '', name: 'Tread', deviceType: 'prism' },
+      { id: '12345', name: 'Blue Door+', group: 'bike' },
+      { id: 'dev-guide-0001', name: null, group: 'guide' },
+      { id: 'dev-x', name: 'Tread', group: '' },
+      { id: '', name: null, group: 'tread' },
     ]);
+  });
+
+  it('names a household profile from name, and from username when name is empty, blank, or null', async () => {
+    const body = apiFixture('subscriptions');
+    body.data[0].shared_user_set[0].name = '';
+    body.data[0].shared_user_set[1].name = '   ';
+    body.data[0].shared_user_set.push({ id: 'u-member-0004', username: 'member_nameless', name: null, image_url: '', last_workout_at: null });
+    const [active] = await getSubscriptions('u-owner-0001', TOKEN, createFakeFetch([jsonResponse(200, body)]));
+    assert.deepEqual(active.sharedUsers.map((user) => user.displayName), ['member_runner', 'member_lifter', 'member_nameless']);
+    assert.equal('firstName' in active.sharedUsers[0], false);
+    assert.equal('lastName' in active.sharedUsers[0], false);
   });
 });
 

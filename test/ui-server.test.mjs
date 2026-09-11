@@ -4,7 +4,9 @@ import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getMe, getSubscriptions } from '../dist/api/peloton-api.js';
 import { AuthError, PELOTON_AUTH, browserFinish, browserStart } from '../dist/auth/peloton-auth.js';
-import { AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse, imageTypeOf } from '../dist/ui/handlers.js';
+import {
+  AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, HOUSEHOLD_REFRESH_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse, imageTypeOf,
+} from '../dist/ui/handlers.js';
 import { createFakeStore } from './helpers/fake-store.mjs';
 import { apiResponse, authFixture, jsonResponse } from './helpers/fixtures.mjs';
 import { createRoutedFetch } from './helpers/routed-fetch.mjs';
@@ -13,6 +15,12 @@ const NOW = 1_789_000_000_000;
 const HOUR = 60 * 60 * 1000;
 const TOKENS = { accessToken: 'access-login', refreshToken: 'refresh-login', expiresAt: NOW + 48 * HOUR };
 const AVATAR_URL = 'https://cdn.example.invalid/avatars/u-owner-0001.jpg';
+/** The devices of the subscriptions fixture as the store and /status carry them. */
+const FIXTURE_DEVICES = [
+  { id: 'dev-bike-0001', name: 'Bike+', group: 'bike' },
+  { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+  { id: 'dev-guide-0001', name: null, group: 'guide' },
+];
 
 function connected(overrides = {}) {
   return {
@@ -25,7 +33,8 @@ function connected(overrides = {}) {
     accessTokenExpiresAt: NOW + 40 * HOUR,
     refreshToken: 'refresh-1',
     isOwner: true,
-    devices: [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }],
+    devices: FIXTURE_DEVICES,
+    householdFetchedAt: NOW - HOUR / 2,
     state: 'connected',
     lastCheckedAt: NOW - HOUR,
     ...overrides,
@@ -120,7 +129,7 @@ describe('/status', () => {
     const result = await routes['/status']();
     assert.equal(result.ok, true);
     assert.equal(result.version, '1.0.0-beta.1');
-    assert.deepEqual(result.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.deepEqual(result.devices, FIXTURE_DEVICES);
     const owner = result.accounts.find((account) => account.id === 'a1');
     assert.deepEqual(owner, {
       id: 'a1', userId: 'u-owner-0001', displayName: 'Owner', username: 'owner_rider', avatar: true, isOwner: true, state: 'connected',
@@ -152,10 +161,60 @@ describe('/status', () => {
     assert.equal((await routes['/status']()).accounts.find((a) => a.id === 'a1').lastWorkoutAt, 1789030990 * 1000);
   });
 
-  it('lists every device on the owner record, counting a device without an id by its name', async () => {
-    const devices = [{ id: '', name: 'Blue Door+', deviceType: 'home_bike_plus' }, { id: '', name: 'Tread', deviceType: 'prism' }, { id: 'x', name: '' }];
+  it('lists every device on the owner record, reading a record from an earlier build without a group and skipping one with nothing to show', async () => {
+    const devices = [
+      { id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' },
+      { id: '', name: null, group: 'guide' },
+      { id: '', name: 'Tread', group: 'tread' },
+      { id: '', name: 'Tread', group: 'tread' },
+      { id: 'x', name: null, group: '' },
+    ];
     const { routes } = harness({ records: { a1: connected({ devices }) } });
-    assert.deepEqual((await routes['/status']()).devices, [{ id: '', name: 'Blue Door+' }, { id: '', name: 'Tread' }]);
+    assert.deepEqual((await routes['/status']()).devices, [
+      { id: 'dev-bike-0001', name: 'Bike+', group: '' },
+      { id: '', name: null, group: 'guide' },
+      { id: '', name: 'Tread', group: 'tread' },
+    ]);
+  });
+
+  it('re-reads the owner subscriptions when the stored household is missing or older than an hour, then serves the store for an hour', async () => {
+    const { routes, store, fetch, clock } = harness({
+      records: { a1: connected({ devices: [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }], householdFetchedAt: undefined }) },
+    });
+    const first = await routes['/status']();
+    assert.equal(first.ok, true);
+    assert.equal(fetch.count('/api/user/u-owner-0001/subscriptions'), 1);
+    assert.deepEqual(first.devices, FIXTURE_DEVICES);
+    assert.deepEqual(first.accounts.map((account) => account.id).sort(), ['a1', 'u-member-0002', 'u-member-0003']);
+    assert.equal(first.accounts.find((account) => account.id === 'u-member-0003').displayName, 'Lifter Example');
+    assert.equal(store.records.get('a1').householdFetchedAt, NOW);
+    await routes['/status']();
+    assert.equal(fetch.count('/subscriptions'), 1, 'served from the store within the hour');
+    clock.advance(HOUSEHOLD_REFRESH_MS - 1);
+    await routes['/status']();
+    assert.equal(fetch.count('/subscriptions'), 1);
+    clock.advance(1);
+    await routes['/status']();
+    assert.equal(fetch.count('/subscriptions'), 2);
+    assert.equal(store.records.get('a1').householdFetchedAt, NOW + HOUSEHOLD_REFRESH_MS);
+  });
+
+  it('keeps the stored household and still answers when the refresh fails, and never asks a member', async () => {
+    const stale = [{ id: 'dev-bike-0001', name: 'Old name', group: 'bike' }];
+    const { routes, store, fetch } = harness({
+      records: {
+        a1: connected({ devices: stale, householdFetchedAt: NOW - HOUSEHOLD_REFRESH_MS }),
+        a2: connected({ userId: 'u-member-0003', isOwner: false, devices: undefined, householdFetchedAt: undefined }),
+      },
+    });
+    fetch.route('/subscriptions', jsonResponse(500, {}));
+    const result = await routes['/status']();
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.devices, stale);
+    assert.equal(fetch.count('/api/user/u-owner-0001/subscriptions'), 1);
+    assert.equal(fetch.count('/api/user/u-member-0003/subscriptions'), 0);
+    assert.equal(store.records.get('a1').householdFetchedAt, NOW - HOUSEHOLD_REFRESH_MS);
+    assert.equal(store.records.get('a1').state, 'connected');
   });
 
   it('reflects a session that died while asking for the last workout', async () => {
@@ -196,9 +255,11 @@ describe('/connect', () => {
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(result.account.isOwner, true);
     assert.equal(result.account.displayName, 'Owner Example');
-    assert.deepEqual(store.records.get('a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.deepEqual(store.records.get('a1').devices, FIXTURE_DEVICES);
+    assert.equal(store.records.get('a1').householdFetchedAt, NOW);
     const status = await routes['/status']();
-    assert.deepEqual(status.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.deepEqual(status.devices, FIXTURE_DEVICES);
+    assert.equal(fetch.count('/subscriptions'), 1, 'the household read at connect is fresh');
     assert.equal(status.accounts.find((account) => account.id === 'u-member-0002').displayName, 'Member Example');
     assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').displayName, 'Lifter Example');
     assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').avatar, true);
@@ -344,7 +405,7 @@ describe('/household', () => {
     assert.equal(fetch.count('/subscriptions'), 1);
     assert.deepEqual([...store.records.keys()].sort(), ['a1', 'u-member-0002', 'u-member-0003']);
     assert.deepEqual(result.accounts.map((account) => account.id).sort(), ['a1', 'u-member-0002', 'u-member-0003']);
-    assert.deepEqual(result.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.deepEqual(result.devices, FIXTURE_DEVICES);
     assert.equal(result.accounts.find((account) => account.id === 'u-member-0003').state, 'not_connected');
   });
 

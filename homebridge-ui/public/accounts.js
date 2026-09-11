@@ -10,7 +10,7 @@ import {
   append, badge, clear, dangerLinkButton, el, helpText, initialsOf, inlineConfirm, linkButton, outlineLinkButton, passwordField, pill, primaryButton,
   relativeTime, textField,
 } from './dom.js';
-import { newId } from './model.js';
+import { devicesText, newId } from './model.js';
 
 /** The key of the panel that adds a profile not on the household list. */
 export const NEW_ACCOUNT = 'new';
@@ -102,7 +102,7 @@ export function renderAccounts(app, container) {
   const devices = app.status?.devices ?? [];
   if (devices.length > 0) {
     container.appendChild(el('div', { class: 'ns-devices form-text' },
-      ACCOUNTS.devices(devices.map((device) => device.name).join(', ')), ' ',
+      ACCOUNTS.devices(devicesText(devices)), ' ',
       el('span', { class: 'ns-devices-suffix' }, ACCOUNTS.devicesSuffix),
     ));
   }

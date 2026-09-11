@@ -52,22 +52,30 @@ export interface Me {
   lastWorkoutAt: number | null;
 }
 
+/**
+ * One member of the household from shared_user_set. The live entry (second Chrome pass on the Pi,
+ * SPEC section 4.2) carries name as a single display string and no first_name or last_name.
+ */
 export interface SharedUser {
   id: string;
   username: string;
-  firstName: string;
-  lastName: string;
+  /** The entry's name, or the username when Peloton sends no name. */
+  displayName: string;
   imageUrl: string;
   isProfileImageDefault: boolean;
   lastWorkoutAt: number | null;
 }
 
+/**
+ * One attached_devices entry as Peloton sends it: device_id, device_name (null for a device the
+ * membership has not named, such as the Guide), and device_group (bike, tread, guide).
+ */
 export interface AttachedDevice {
-  /** Empty when the entry carries no id; the connect flow then keys the device by its name. */
   id: string;
-  name: string;
-  /** Hardware model code when the entry carries device_type; the device map (SPEC section 8.3) is learned from it. */
-  deviceType?: string;
+  /** null when the entry's device_name is null or missing. */
+  name: string | null;
+  /** The device family: "bike", "tread", or "guide" as seen on the live membership; empty when absent. */
+  group: string;
 }
 
 export interface Subscription {
@@ -184,26 +192,23 @@ export async function getSubscriptions(userId: string, accessToken: string, fetc
       maxSharedUsers: num(record.max_shared_users) ?? 0,
       sharedUsers: arr(record.shared_user_set).map((user) => {
         const shared = obj(user);
+        const username = str(shared.username);
         return {
           id: idStr(shared.id),
-          username: str(shared.username),
-          firstName: str(shared.first_name),
-          lastName: str(shared.last_name),
+          username,
+          displayName: str(shared.name).trim() || username,
           imageUrl: str(shared.image_url),
           isProfileImageDefault: shared.is_profile_image_default === true,
           lastWorkoutAt: num(shared.last_workout_at),
         };
       }),
-      // An entry with neither an id nor a name is nothing the settings page could show; the rest are
-      // kept, a numeric id as its decimal string, so no device on the membership is dropped here.
-      attachedDevices: arr(record.attached_devices).map((device) => {
+      // An entry with no device_id, no device_name, and no device_group is nothing the settings page
+      // could show; the rest are kept, a numeric id as its decimal string, so no device is dropped here.
+      attachedDevices: arr(record.attached_devices).map((device): AttachedDevice => {
         const attached = obj(device);
-        const result: AttachedDevice = { id: idStr(attached.id), name: str(attached.name) };
-        if (typeof attached.device_type === 'string' && attached.device_type.length > 0) {
-          result.deviceType = attached.device_type;
-        }
-        return result;
-      }).filter((device) => device.id.length > 0 || device.name.length > 0),
+        const name = str(attached.device_name);
+        return { id: idStr(attached.device_id), name: name.length > 0 ? name : null, group: str(attached.device_group) };
+      }).filter((device) => device.id.length > 0 || device.name !== null || device.group.length > 0),
     };
   });
 }

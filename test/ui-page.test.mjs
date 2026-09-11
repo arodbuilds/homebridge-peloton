@@ -53,7 +53,11 @@ const STATUS = {
     summary({ id: 'u-member-0002', userId: 'u-member-0002', displayName: 'Member Example', username: 'member_runner' }),
     summary({ id: 'u-member-0003', userId: 'u-member-0003', displayName: 'Lifter Example', username: 'member_lifter', avatar: true }),
   ],
-  devices: [{ id: 'dev-bike-0001', name: 'Blue Door+' }, { id: '', name: 'Tread' }],
+  devices: [
+    { id: 'dev-bike-0001', name: 'Blue Door+', group: 'bike' },
+    { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
+    { id: 'dev-guide-0001', name: null, group: 'guide' },
+  ],
   version: '1.0.0-beta.1',
 };
 
@@ -110,9 +114,12 @@ describe('account cards', () => {
     assert.equal(avatarSrc({ ok: false, unavailable: true, message: 'x' }), null);
   });
 
-  it('renders the Devices line with every device name from /status and omits it without devices', () => {
+  it('renders the Devices line as name (group), the capitalised group for a device without a name, and omits it without devices', () => {
     const { root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
-    assert.equal(root.querySelector('.ns-devices').textContent, 'Devices on this membership: Blue Door+, Tread (names come from your membership)');
+    assert.equal(
+      root.querySelector('.ns-devices').textContent,
+      'Devices on this membership: Blue Door+ (bike), Tread (tread), Guide (names come from your membership)',
+    );
     const bare = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] }, { ...STATUS, devices: [] });
     assert.equal(bare.root.querySelector('.ns-devices'), null);
   });

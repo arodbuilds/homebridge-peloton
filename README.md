@@ -22,7 +22,7 @@ Then open the plugin's settings from the Plugins page. Everything below happens 
 
 ### 1. Connect the owner
 
-Under Accounts, enter the email and password of the Peloton account that owns the membership and click Connect. The card shows a Connected pill with "Last checked just now", and every profile on the membership appears under it as its own card marked Not connected. A Devices line lists the hardware on the membership, with the names from your Peloton account.
+Under Accounts, enter the email and password of the Peloton account that owns the membership and click Connect. The card shows a Connected pill with "Last checked just now", and every profile on the membership appears under it as its own card marked Not connected. A Devices line lists the hardware on the membership, each with the name from your Peloton account and its kind (bike, tread) after it; a device without a name, such as the Guide, shows its kind alone. The list follows your membership: the plugin re-reads it when the page opens and the last read is more than an hour old, and at the daily check-in.
 
 The password is stored in your Homebridge config so the plugin can sign in again by itself if Peloton ever ends the session. The plugin keeps a session token and refreshes it, so signing in is rare.
 

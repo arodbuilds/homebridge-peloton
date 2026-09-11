@@ -64,7 +64,7 @@ Intro: "Sign in as the membership owner and every household profile appears here
 Owner shows Reconnect the same as members when in Reconnect needed.
 
 Below the list: "Add account" link button (opens the connect panel for a profile not on the household list).
-Devices row (12.6 px muted, read-only): "Devices on this membership: Blue Door+ (Bike+), Tread (names come from your membership)".
+Devices row (12.6 px muted, read-only): "Devices on this membership: Blue Door+ (bike), Tread (tread), Guide (names come from your membership)". Clarification (SPEC 7 and 10): each device is its name from the membership with its group (bike, tread, guide) in brackets after it; a device Peloton has not named, such as the Guide, shows its capitalised group alone, and the brackets are omitted when the group equals the name.
 
 ### Connect panel (inline, expands under the card; `--ns-subtle` background, 1 px top rule, 16 px padding)
 **Email and password (primary path)**
@@ -168,10 +168,16 @@ The page in `homebridge-ui/public/` follows this document; where the build neede
 The first pass through the page in Chrome on the Pi (Homebridge UI 5.29 over plain http) settled these.
 - Activities: a Workout trigger whose config has no activities list (SPEC 6: absent or empty means all) renders with every chip selected and the summary "All activities". Select all / none keep their meaning, and an all-selected set is saved as an empty list.
 - Last checked: the Connected subline follows every successful poll of the account (SPEC 7 and 8.2), not only sign-in, refresh, and check-in.
-- Household cards: the name is "first_name last_name" from the membership when Peloton sends one, the username otherwise, and it is refreshed on every subscriptions read (SPEC 7).
-- Devices line: every device on the owner's membership is listed by name; a device Peloton sends without a name is listed by its hardware family (Bike, Bike+, Tread).
+- Household cards: the name comes from the membership when Peloton sends one, the username otherwise, and it is refreshed on every subscriptions read (SPEC 7). The second Chrome pass below settles which field carries it.
+- Devices line: every device on the owner's membership is listed. The second Chrome pass below settles the format; the hardware family from device_type is gone with it.
 - Avatars: a photo renders whatever content type Peloton's CDN sends, as long as the bytes are a JPEG, PNG, GIF, or WebP (SPEC 10).
 - Ids: new accounts and triggers get an id on plain http too, where crypto.randomUUID does not exist (SPEC 6).
+
+## Clarifications from the second Chrome pass
+The second pass in Chrome on the Pi, with the live shape of the membership call (SPEC 4.2), settled these.
+- Devices line: "Devices on this membership: Blue Door+ (bike), Tread (tread), Guide (names come from your membership)". Each device is its name from the membership with its group (bike, tread, guide) in brackets after it. A device Peloton has not named, such as the Guide, shows its capitalised group alone. The brackets are omitted when the group equals the name, and when the plugin has no group for the device (a record written before this pass, until the next membership read).
+- Household cards: the name is the membership's name field for the member, one string; there is no first name or last name. The username stands in when the name is empty.
+- Freshness: the page shows the membership as the plugin last read it. /status re-reads it when that read is more than an hour old (SPEC 10), so a page opened after an upgrade or a change on the membership shows current names and devices without waiting for the daily check-in.
 
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
