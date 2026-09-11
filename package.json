@@ -3,7 +3,7 @@
   "displayName": "Peloton",
   "type": "module",
   "version": "1.0.0-beta.1",
-  "description": "Peloton workouts as HomeKit sensors for Homebridge automations",
+  "description": "Peloton workouts as HomeKit sensors for Homebridge automations: workout in progress and heart-rate zones.",
   "author": "Alex Rodriguez (https://alex-rodriguez.com)",
   "license": "Apache-2.0",
   "homepage": "https://github.com/arodbuilds/homebridge-peloton#readme",
@@ -16,10 +16,13 @@
   },
   "keywords": [
     "homebridge-plugin",
+    "homebridge",
     "supports-hap",
     "peloton",
     "homekit",
-    "workout"
+    "workout",
+    "heart-rate",
+    "fitness"
   ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

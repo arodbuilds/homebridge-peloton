@@ -2,28 +2,21 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 1.0.0-beta.1.
 
-## Unreleased
+## 1.0.0-beta.1 (2026-09-11)
 
-Build 3 of 4: config schema, settings page, UI server, device matching by platform. Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
+First beta, to the npm beta tag. Build 4 of 4: banner, README, release prep, and the last Chrome pass findings. Build 3 of 4: config schema, settings page, UI server, device matching by platform. Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 
 ### Added
 
+- The regenerated banner (`assets/peloton-banner.png` and the copy under `homebridge-ui/public/`) with the release tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones."
+- README rewritten for release: requirements, install, the setup walkthrough with the settings page screenshots, browser sign-in, how it works, privacy and what is stored where, troubleshooting, development, and credits.
 - The settings page (`homebridge-ui/public/`), plain HTML, CSS, and ES modules served by the Homebridge UI: Accounts with cards, status pills, avatars, the inline connect panel with email and password and the Sign in with browser fallback, Add account, and the membership's device names; Triggers as Workout and Heart-rate zone cards with badges, activity chips, the add chooser, Duplicate and Remove; Polling with the Fast polling switch block, the intervals, the live request estimate, and the dismissible automation callout; Settings with Name, Debug logging, and Advanced holding the auto-off minutes, the Attention needed sensor, the daily check-in time, and Restore from backup. Validation on blur, a sticky summary box that gates Save, the blocking Polling error, the reconnect banner, the unsaved-changes bar, empty and first-run states, the phone layout, and both host themes follow design/README.md.
 - The settings UI server (`src/ui/`, started by `homebridge-ui/server.js`): /status, /connect, /browser/start, /browser/finish, /test, /household, /remove, and /avatar over the same account store, auth, and API modules the platform uses. Errors carry an auth stage or `api` with the HTTP status; tokens never leave the server; config.json is never written by it. Profile photos are proxied with a 24 hour cache.
 - `connectWithTokens` in the shared connect flow for the browser sign-in path, and the removal of a household profile once a configured account connects as that member.
 - `config.schema.json` with the full SPEC section 6 shape, the section 2 defaults, the settings page copy, and the validation constraints, marked as using the custom UI.
 - Account write-back from the page: id, email, display name, and userId from the store on save; the password only when entered on the page, else the stored one unchanged.
 - Test suites for the schema (ajv, a dev dependency), the UI server handlers with a fake store and fake fetch, the page model, and platform reconciliation by id.
-- README walkthrough for the settings page: connect the owner, members connect, add a trigger, set up the fast polling automation, and the browser sign-in fallback with the Back button instruction; the hand-edited config.json moved to a Manual configuration appendix.
-
-### Changed
-
-- A trigger's device is `any`, `bike`, or `tread`, matched by the workout's platform (`home_bike` for the Bike and Bike+, `home_tread` for the Tread), the codes the Pi ride tests reported. The device_type map learned from attached_devices and the "device filtering is unavailable" log line are gone; device_type stays in the debug poll line. Any other device value becomes `any` with a warn line.
-- The third-party import fixture is an Apple Health import (device_type `apple_health`, platform `iOS_app`), as the Pi reported it.
-- SPEC sections 6, 7, 8.3, 9, 10, and 15 fold build 3 in; section 15 keeps the one open item.
-
-### Added in builds 1 and 2
-
+- README walkthrough for the settings page: connect the owner, members connect, add a trigger, set up the fast polling automation, and the browser sign-in fallback with the Back button instruction.
 - Config parsing and validation (`src/config.ts`) with the SPEC defaults: invalid values are clamped or defaulted with one warn line each, and missing or duplicate ids are generated for the run with a warn line asking for a save from the settings page.
 - Trigger rules (`src/poller/rules.ts`): workout detectability, matching by who, activities, and device through a device_type map learned from attached devices, zone bounds in SPEC priority order with rounded-down defaults, zone from a sample, a hold helper with a hold time in each direction, and the workout sensor's hold after end.
 - The poller (`src/poller/poller.ts`): standby, scanning, locked, and released states with staggered polling, lock-on to the first workout in progress, following it by id so a synced import cannot end it, the performance graph only while a zone trigger targets the locked account, backoff after three consecutive failures, refresh on 401, and account drop with an attention event on invalid_grant. The Fast polling switch with its auto-off timer anchored to the later of switch-on and the last workout end, and the daily check-in that refreshes tokens, zones, household profiles, and devices.
@@ -31,7 +24,6 @@ Build 3 of 4: config schema, settings page, UI server, device matching by platfo
 - Platform wiring: config load, account store, device map from stored household devices, accessory registration with orphan cleanup, poller events connected to the accessories, startup skip lines for accounts that are not connected, and a clean stop on Homebridge shutdown.
 - Startup sign-in and re-login (`src/store/account-connect.ts`): at startup the platform signs in, one after another, each configured account that has email and password but no stored sign-in, saves the tokens, fills the profile from `/api/me`, and settles the owner and household from subscriptions; after an invalid_grant drop it signs in once more when config has the password. Log lines "Connected {name} (@{username})" and "{name}: sign-in failed at stage {stage}, HTTP {status}; use the settings page to connect".
 - Test suites for config, rules, poller, accessories, and platform with a fake clock and scheduler and a route-based fixture-replaying fetch.
-
 - Project scaffold: TypeScript strict, ESLint, node:test, lint, build, and test scripts, CI on Node 20, 22, and 24, and a release workflow that publishes through npm trusted publishing (pre-release to the beta tag, latest release to latest).
 - Stub Peloton platform that loads config and logs "Peloton platform loaded".
 - Auth module (`src/auth/peloton-auth.ts`): headless Auth0 Universal Login with PKCE, refresh with token rotation, browser sign-in fallback (`browserStart` and `browserFinish`), an in-file cookie jar, HTML form parsing that reads the action and hidden inputs by name, `AuthError` with stage, status, and OAuth code, and an opt-in redacted debug dump of the login pages.
@@ -44,16 +36,23 @@ Build 3 of 4: config schema, settings page, UI server, device matching by platfo
 - Probe `graph <workoutId>` command that prints the metric slugs, sample counts, and heart-rate zone bounds of one workout's performance graph.
 - CLAUDE.md with the working rules, README first pass, and this changelog.
 
-### Changed in builds 1 and 2
+### Changed
 
+- New trigger cards start with the Name prefilled, "Workout" or "Zone 4 or higher", instead of a placeholder. A Heart-rate zone card's name follows the chosen zone until the name is edited.
+- package.json description and keywords for the npm listing (homebridge, homekit, workout, heart-rate, fitness alongside homebridge-plugin, supports-hap, and peloton).
+- SPEC sections 10, 13, 14, and 15 and the design README fold build 4 in; section 15 lists what stays open after beta.1.
+- A trigger's device is `any`, `bike`, or `tread`, matched by the workout's platform (`home_bike` for the Bike and Bike+, `home_tread` for the Tread), the codes the Pi ride tests reported. The device_type map learned from attached_devices and the "device filtering is unavailable" log line are gone; device_type stays in the debug poll line. Any other device value becomes `any` with a warn line.
+- The third-party import fixture is an Apple Health import (device_type `apple_health`, platform `iOS_app`), as the Pi reported it.
+- SPEC sections 6, 7, 8.3, 9, 10, and 15 fold build 3 in; section 15 keeps the one open item.
 - Attached devices from the subscriptions call carry `deviceType` when present, and the account store keeps `isOwner` and the owner's `devices` so the device map survives a restart. `withValidToken` takes a `forceRefresh` option for the daily check-in.
 - README describes the config.json shape for a hand-edited setup and where sign-ins are stored.
-
 - Verification detection no longer runs on the initial login page, whose bundled Lock library and text dictionary contain verification words for every account. It runs on the credentials response, the callback page, and the token error path only.
 - The workout type no longer has a device id field: the second Pi probe confirmed that workouts carry none and that `device_type` is the hardware model code. `/api/me` `last_workout_at` is stale and is no longer the source for "last workout"; the latest workout's `created_at` is. The performance graph fixture carries the heart-rate zone bounds the probe confirmed on a 168 max. The probe prints the new workout fields and labels the stale `/api/me` value.
 
 ### Fixed
 
+- The settings page iframe scrolled on its own by a few pixels and wheel scrolling stuck at the boundary: the Homebridge UI sizes the iframe to the body's scrollHeight, and the banner's top margin collapsed out of that measure. html and body are now margin 0 and overflow hidden, the root contains its margins, and the page asks the host to size the iframe after every render. Verified in headless Chromium against the host stylesheet in both themes and at phone width.
+- Connect, Test, Add account, Edit, and Duplicate trigger rendered grey under the Homebridge UI's dark themes, whose stylesheet greys every link button with an important rule, while Remove stayed red. The page's link buttons and the callout link now keep the link colour in both themes.
 - The Devices line was built from an attached_devices shape Peloton does not send. The live entries (second Chrome pass on the Pi) are `device_id`, `device_name`, `device_group`, and `last_attached_at`, with `device_name` null for the Guide and no `id`, `name`, or `device_type`, so the line listed nothing. The parser reads each entry as id, name or null, and group (bike, tread, guide); the store keeps that shape and the hardware family from `device_type` is gone; the line reads "Devices on this membership: Blue Door+ (bike), Tread (tread), Guide", each device as its name with its group after it, or the capitalised group alone for a device without a name. The fixture carries the live shape.
 - Household profiles were named from `first_name` and `last_name`, which `shared_user_set` does not carry: the live entry has `name` as one string (with `username`, `id`, `image_url`, `is_profile_private`, `is_provisional`, `last_workout_at`, `total_workouts`, and `location`). Profiles take their display name from `name`, the username when it is empty.
 - The membership was read only at connect and at the daily check-in, so a page opened after an upgrade showed the old names and devices until 03:00. /status now re-reads the owner's subscriptions when the stored household is older than one hour, records the read as `householdFetchedAt` on the owner's record, and keeps the stored household when the read fails.
