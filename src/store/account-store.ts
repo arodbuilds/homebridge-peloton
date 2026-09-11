@@ -27,6 +27,14 @@ export interface LastError {
   at: number;
 }
 
+/** An attached device from the owner's subscriptions, kept so the device map survives a restart. */
+export interface StoredDevice {
+  id: string;
+  name: string;
+  /** Hardware model code when the subscriptions call carried device_type. */
+  deviceType?: string;
+}
+
 export interface AccountRecord {
   userId?: string;
   username?: string;
@@ -39,6 +47,10 @@ export interface AccountRecord {
   refreshToken?: string;
   hrZones?: StoredZone[];
   maxHr?: number;
+  /** True once a subscriptions call showed this account owns the household. */
+  isOwner?: boolean;
+  /** Household devices, present on the owner's record only. */
+  devices?: StoredDevice[];
   state: AccountState;
   lastCheckedAt?: number;
   lastError?: LastError;
@@ -154,17 +166,18 @@ export class AccountStore {
   }
 
   /**
-   * Runs fn with a valid access token. Refreshes first when the token is within 6 hours of expiry,
-   * and once more when fn throws ApiError 401. A rotated refresh token is on disk before fn runs.
+   * Runs fn with a valid access token. Refreshes first when the token is within 6 hours of expiry
+   * (or always, with forceRefresh, as the daily check-in does), and once more when fn throws
+   * ApiError 401. A rotated refresh token is on disk before fn runs.
    * On invalid_grant the account is marked reconnect_needed and AuthError stage refresh is rethrown.
    */
-  async withValidToken<T>(accountId: string, fn: (accessToken: string) => Promise<T>): Promise<T> {
+  async withValidToken<T>(accountId: string, fn: (accessToken: string) => Promise<T>, options: { forceRefresh?: boolean } = {}): Promise<T> {
     let record = await this.load(accountId);
     if (record === undefined || record.accessToken === undefined || record.refreshToken === undefined) {
       throw new Error(`Account ${accountId} has no tokens`);
     }
     const expiresAt = record.accessTokenExpiresAt ?? 0;
-    if (expiresAt - this.now() <= REFRESH_AHEAD_MS) {
+    if (options.forceRefresh === true || expiresAt - this.now() <= REFRESH_AHEAD_MS) {
       record = await this.refreshAccount(accountId, record);
     }
     try {

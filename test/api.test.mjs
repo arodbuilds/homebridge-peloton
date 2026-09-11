@@ -99,7 +99,7 @@ describe('getSubscriptions', () => {
     assert.equal(active.status, 'active_normal');
     assert.equal(active.ownerId, 'u-owner-0001');
     assert.equal(active.maxSharedUsers, 20);
-    assert.deepEqual(active.attachedDevices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.deepEqual(active.attachedDevices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
     assert.deepEqual(active.sharedUsers, [
       {
         id: 'u-member-0002', username: 'member_runner', firstName: 'Member', lastName: 'Example',

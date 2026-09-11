@@ -4,9 +4,17 @@ All notable changes to homebridge-peloton are listed here. The format follows Ke
 
 ## Unreleased
 
-Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
+Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 
 ### Added
+
+- Config parsing and validation (`src/config.ts`) with the SPEC defaults: invalid values are clamped or defaulted with one warn line each, and missing or duplicate ids are generated for the run with a warn line asking for a save from the settings page.
+- Trigger rules (`src/poller/rules.ts`): workout detectability, matching by who, activities, and device through a device_type map learned from attached devices, zone bounds in SPEC priority order with rounded-down defaults, zone from a sample, a hold helper with a hold time in each direction, and the workout sensor's hold after end.
+- The poller (`src/poller/poller.ts`): standby, scanning, locked, and released states with staggered polling, lock-on to the first workout in progress, following it by id so a synced import cannot end it, the performance graph only while a zone trigger targets the locked account, backoff after three consecutive failures, refresh on 401, and account drop with an attention event on invalid_grant. The Fast polling switch with its auto-off timer anchored to the later of switch-on and the last workout end, and the daily check-in that refreshes tokens, zones, household profiles, and devices.
+- Accessories (`src/accessories/`): trigger sensors as OccupancySensor or Switch with the service swapped in place when the kind changes, the Fast polling switch, and the optional Attention needed sensor, with UUIDs from ids and the SPEC accessory information fields.
+- Platform wiring: config load, account store, device map from stored household devices, accessory registration with orphan cleanup, poller events connected to the accessories, startup skip lines for accounts that are not connected, and a clean stop on Homebridge shutdown.
+- Startup sign-in and re-login (`src/store/account-connect.ts`): at startup the platform signs in, one after another, each configured account that has email and password but no stored sign-in, saves the tokens, fills the profile from `/api/me`, and settles the owner and household from subscriptions; after an invalid_grant drop it signs in once more when config has the password. Log lines "Connected {name} (@{username})" and "{name}: sign-in failed at stage {stage}, HTTP {status}; use the settings page to connect".
+- Test suites for config, rules, poller, accessories, and platform with a fake clock and scheduler and a route-based fixture-replaying fetch.
 
 - Project scaffold: TypeScript strict, ESLint, node:test, lint, build, and test scripts, CI on Node 20, 22, and 24, and a release workflow that publishes through npm trusted publishing (pre-release to the beta tag, latest release to latest).
 - Stub Peloton platform that loads config and logs "Peloton platform loaded".
@@ -21,6 +29,9 @@ Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 - CLAUDE.md with the working rules, README first pass, and this changelog.
 
 ### Changed
+
+- Attached devices from the subscriptions call carry `deviceType` when present, and the account store keeps `isOwner` and the owner's `devices` so the device map survives a restart. `withValidToken` takes a `forceRefresh` option for the daily check-in.
+- README describes the config.json shape for a hand-edited setup and where sign-ins are stored.
 
 - Verification detection no longer runs on the initial login page, whose bundled Lock library and text dictionary contain verification words for every account. It runs on the credentials response, the callback page, and the token error path only.
 - The workout type no longer has a device id field: the second Pi probe confirmed that workouts carry none and that `device_type` is the hardware model code. `/api/me` `last_workout_at` is stale and is no longer the source for "last workout"; the latest workout's `created_at` is. The performance graph fixture carries the heart-rate zone bounds the probe confirmed on a 168 max. The probe prints the new workout fields and labels the stale `/api/me` value.
