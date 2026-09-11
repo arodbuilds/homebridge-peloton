@@ -13,7 +13,10 @@
       "name": "Cycling Workout",
       "user_id": "u-owner-0001",
       "peloton_id": "redacted",
-      "ride": { "id": "redacted", "title": "30 min Power Zone Ride", "duration": 1800 }
+      "is_peloton_originated_workout": true,
+      "is_3p_fit_feed_workout": false,
+      "platform": "home_bike",
+      "ride": { "id": "redacted", "title": "30 min Power Zone Ride", "duration": 1800, "instructor_id": "redacted-instructor" }
     }
   ],
   "limit": 1,

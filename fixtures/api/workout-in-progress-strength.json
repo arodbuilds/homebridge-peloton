@@ -13,7 +13,10 @@
       "name": "Strength Workout",
       "user_id": "u-member-0003",
       "peloton_id": "redacted",
-      "ride": { "id": "redacted", "title": "20 min Full Body Strength", "duration": 1200 }
+      "is_peloton_originated_workout": true,
+      "is_3p_fit_feed_workout": false,
+      "platform": "ios",
+      "ride": { "id": "redacted", "title": "20 min Full Body Strength", "duration": 1200, "instructor_id": "redacted-instructor" }
     }
   ],
   "limit": 1,

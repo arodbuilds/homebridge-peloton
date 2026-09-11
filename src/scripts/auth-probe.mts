@@ -257,7 +257,8 @@ async function commandMe(): Promise<void> {
     }
     console.log(`Max heart rate: default ${me.defaultMaxHeartRate ?? 'none'}, customised ${me.customizedMaxHeartRate ?? 'none'}`);
     console.log(`Paired devices: ${me.pairedDevices.length}`);
-    console.log(`Last workout at: ${me.lastWorkoutAt === null ? 'never' : new Date(me.lastWorkoutAt * 1000).toISOString()}`);
+    const lastWorkoutAt = me.lastWorkoutAt === null ? 'none' : new Date(me.lastWorkoutAt * 1000).toISOString();
+    console.log(`last_workout_at on /api/me (stale, not used by the plugin): ${lastWorkoutAt}`);
   });
 }
 
@@ -276,8 +277,13 @@ async function commandWorkout(args: Args): Promise<void> {
     console.log(`Workout type: ${workout.workoutType}`);
     console.log(`Title: ${workout.title}`);
     console.log(`Name: ${workout.name}`);
-    console.log(`Device id field: ${workout.deviceId ?? 'absent'}`);
+    console.log(`Platform: ${workout.platform}`);
+    console.log(`Peloton originated: ${workout.isPelotonOriginatedWorkout}, third-party fit feed import: ${workout.is3pFitFeedWorkout}`);
+    if (workout.ride !== null) {
+      console.log(`Ride: ${workout.ride.title} (${workout.ride.duration ?? 'unknown'} s, instructor ${workout.ride.instructorId ?? 'none'})`);
+    }
     console.log(`Start: ${formatEpoch(workout.startTime)}, end: ${formatEpoch(workout.endTime)}, created: ${formatEpoch(workout.createdAt)}`);
+    console.log('Last workout at (from created_at): ' + formatEpoch(workout.createdAt));
     if (args.keys) {
       const keys = await rawWorkoutKeys(userId, accessToken);
       console.log(`Raw workout fields (names only): ${keys.join(', ')}`);
@@ -298,7 +304,7 @@ async function commandWorkout(args: Args): Promise<void> {
   });
 }
 
-/** Fetches the latest workout again and returns only the top-level field names, to settle SPEC open item 1. */
+/** Fetches the latest workout again and returns only the top-level field names. This is what settled SPEC open item 1: no device id field. */
 async function rawWorkoutKeys(userId: string, accessToken: string): Promise<string[]> {
   const response = await fetch(`${PELOTON_API_BASE}/api/user/${encodeURIComponent(userId)}/workouts?limit=1&sort_by=-created`, {
     headers: { authorization: `Bearer ${accessToken}`, 'peloton-platform': 'web', accept: 'application/json' },

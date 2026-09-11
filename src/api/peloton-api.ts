@@ -1,5 +1,6 @@
 /**
- * Typed wrappers for the four Peloton member API calls (SPEC section 4.2).
+ * Typed wrappers for the Peloton member API calls (SPEC section 4.2): me, subscriptions, the
+ * latest workout, one workout by id, and the performance graph.
  * Each takes an access token and a fetch implementation, and never stores either.
  * Returned objects contain only the fields SPEC lists.
  */
@@ -78,20 +79,49 @@ export interface Subscription {
 
 export type WorkoutStatus = 'IN_PROGRESS' | 'COMPLETE' | string;
 
+/** The class or free ride a workout was taken against, from the ride object on the workout. */
+export interface WorkoutRide {
+  id: string;
+  title: string;
+  /** Planned length in seconds, null when absent. */
+  duration: number | null;
+  /** Present on instructor-led classes, absent on free rides and imports. */
+  instructorId?: string;
+}
+
+/**
+ * A workout as the list and the single-workout call return it (both carry the same fields).
+ * Workouts carry no device id field (confirmed by the build 2 Pi probe, SPEC section 15 item 1):
+ * device_type is the hardware model code (home_bike_plus, iOS, and so on), not an identifier of
+ * the member's unit, so device matching maps it to attached_devices (SPEC section 8.3).
+ */
 export interface Workout {
   id: string;
   status: WorkoutStatus;
   fitnessDiscipline: string;
+  /** Hardware model code, not a device id. */
   deviceType: string;
   workoutType: string;
   /** Epoch seconds. */
   startTime: number | null;
   endTime: number | null;
+  /** Epoch seconds. The latest workout's created_at is the source for "last workout" (SPEC section 4.2). */
   createdAt: number | null;
   title: string;
   name: string;
-  /** Device id field when the API carries one (SPEC open item 1). */
-  deviceId?: string;
+  /** True for workouts recorded on Peloton hardware or apps. */
+  isPelotonOriginatedWorkout: boolean;
+  /**
+   * True for workouts synced in from a third-party fitness feed (Apple Health, Strava, Fitbit).
+   * These are ignored for detection (SPEC section 8.2).
+   */
+  is3pFitFeedWorkout: boolean;
+  /** Platform the workout was recorded on, as Peloton names it. */
+  platform: string;
+  /** Peloton's own workout identifier when present, otherwise empty. */
+  pelotonId: string;
+  /** The ride or class, null when the workout carries none. */
+  ride: WorkoutRide | null;
 }
 
 export interface HeartRateMetric {
@@ -176,8 +206,21 @@ export async function getLatestWorkout(userId: string, accessToken: string, fetc
   if (first === undefined) {
     return null;
   }
-  const record = obj(first);
-  const workout: Workout = {
+  return parseWorkout(obj(first));
+}
+
+/**
+ * GET /api/workout/{id}. The same shape as one entry of the workouts list. While locked on a
+ * workout the poller reads its status here rather than from the list, so a synced import
+ * arriving mid-workout cannot end it (SPEC section 8.2).
+ */
+export async function getWorkout(workoutId: string, accessToken: string, fetchImpl: FetchImpl = fetch): Promise<Workout> {
+  const json = await getJson(`/api/workout/${encodeURIComponent(workoutId)}`, accessToken, fetchImpl);
+  return parseWorkout(json);
+}
+
+function parseWorkout(record: Json): Workout {
+  return {
     id: str(record.id),
     status: str(record.status),
     fitnessDiscipline: str(record.fitness_discipline),
@@ -188,11 +231,28 @@ export async function getLatestWorkout(userId: string, accessToken: string, fetc
     createdAt: num(record.created_at),
     title: str(record.title),
     name: str(record.name),
+    isPelotonOriginatedWorkout: record.is_peloton_originated_workout === true,
+    is3pFitFeedWorkout: record.is_3p_fit_feed_workout === true,
+    platform: str(record.platform),
+    pelotonId: str(record.peloton_id),
+    ride: parseRide(record.ride),
   };
-  if (typeof record.device_id === 'string' && record.device_id.length > 0) {
-    workout.deviceId = record.device_id;
+}
+
+function parseRide(value: unknown): WorkoutRide | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
   }
-  return workout;
+  const record = value as Json;
+  const ride: WorkoutRide = {
+    id: str(record.id),
+    title: str(record.title),
+    duration: num(record.duration),
+  };
+  if (typeof record.instructor_id === 'string' && record.instructor_id.length > 0) {
+    ride.instructorId = record.instructor_id;
+  }
+  return ride;
 }
 
 /** GET /api/workout/{id}/performance_graph?every_n={everyN} */
