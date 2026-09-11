@@ -65,6 +65,8 @@ export interface SharedUser {
 export interface AttachedDevice {
   id: string;
   name: string;
+  /** Hardware model code when the entry carries device_type; the device map (SPEC section 8.3) is learned from it. */
+  deviceType?: string;
 }
 
 export interface Subscription {
@@ -193,7 +195,11 @@ export async function getSubscriptions(userId: string, accessToken: string, fetc
       }),
       attachedDevices: arr(record.attached_devices).map((device) => {
         const attached = obj(device);
-        return { id: str(attached.id), name: str(attached.name) };
+        const result: AttachedDevice = { id: str(attached.id), name: str(attached.name) };
+        if (typeof attached.device_type === 'string' && attached.device_type.length > 0) {
+          result.deviceType = attached.device_type;
+        }
+        return result;
       }),
     };
   });
