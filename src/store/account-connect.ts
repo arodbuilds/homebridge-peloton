@@ -1,10 +1,12 @@
 /**
- * Connecting an account from email and password, and the profile and household updates that the
- * connect, the daily check-in, and the settings page share (SPEC sections 7, 8.2, 8.5, 10).
+ * Connecting an account from email and password or from browser sign-in tokens, and the profile and
+ * household updates that the connect, the daily check-in, and the settings page share (SPEC
+ * sections 7, 8.2, 8.5, 10).
  *
- * connectAccount logs in once, saves the tokens before anything else, then fills the profile from
- * /api/me and, when the account owns a membership, the household profiles and devices from
- * subscriptions. AuthError from the login propagates untouched so the caller can log its stage.
+ * connectAccount logs in once and hands the tokens to connectWithTokens, which saves them before
+ * anything else, then fills the profile from /api/me and, when the account owns a membership, the
+ * household profiles and devices from subscriptions. AuthError from the login propagates untouched
+ * so the caller can log its stage. The settings page's browser path calls connectWithTokens directly.
  */
 
 import type { Me, Subscription } from '../api/peloton-api.js';
@@ -19,6 +21,7 @@ export interface ConnectStore {
   load(accountId: string): Promise<AccountRecord | undefined>;
   loadAll(): Promise<Map<string, AccountRecord>>;
   save(accountId: string, record: AccountRecord): Promise<void>;
+  remove(accountId: string): Promise<void>;
   withValidToken<T>(accountId: string, fn: (accessToken: string) => Promise<T>, options?: { forceRefresh?: boolean }): Promise<T>;
 }
 
@@ -40,13 +43,20 @@ export interface ConnectResult {
   devices: StoredDevice[];
 }
 
-/**
- * Logs in and fills the record. Tokens are on disk with state connected before the profile calls
- * run, so a profile failure after a successful login leaves a connected account whose profile the
- * next check-in completes.
- */
+/** Logs in with email and password, then runs the connect flow with the tokens. */
 export async function connectAccount(deps: ConnectDependencies, accountId: string, email: string, password: string): Promise<ConnectResult> {
   const tokens = await deps.login(email, password);
+  return connectWithTokens(deps, accountId, tokens);
+}
+
+/**
+ * Fills the record from a fresh set of tokens. Tokens are on disk with state connected before the
+ * profile calls run, so a profile failure after a successful sign-in leaves a connected account
+ * whose profile the next check-in completes. Once the profile names the userId, a household
+ * profile the owner's subscriptions created for it (SPEC section 7, keyed by that userId) is
+ * removed, since this account now stands for that member.
+ */
+export async function connectWithTokens(deps: Omit<ConnectDependencies, 'login'>, accountId: string, tokens: Tokens): Promise<ConnectResult> {
   const previous = (await deps.store.load(accountId)) ?? { state: 'not_connected' };
   let record: AccountRecord = {
     ...previous,
@@ -62,11 +72,34 @@ export async function connectAccount(deps: ConnectDependencies, accountId: strin
   const me = await deps.store.withValidToken(accountId, (token) => deps.api.getMe(token));
   record = applyProfile(record, me, deps.now());
   await deps.store.save(accountId, record);
+  await claimHouseholdProfile(deps.store, accountId, record.userId);
 
   const subscriptions = await deps.store.withValidToken(accountId, (token) => deps.api.getSubscriptions(me.id, token));
   const devices = await applyHousehold(deps.store, record, subscriptions);
   await deps.store.save(accountId, record);
   return { record, devices };
+}
+
+/**
+ * Removes the household profile the owner's subscriptions created for userId (SPEC section 7) once
+ * a configured account with its own id has connected as that member, so the settings page shows one
+ * card for them. A record that carries tokens is never removed. Returns true when a file was removed.
+ */
+export async function claimHouseholdProfile(store: Pick<ConnectStore, 'load' | 'remove'>, accountId: string, userId: string | undefined): Promise<boolean> {
+  if (userId === undefined || userId.length === 0 || userId === accountId) {
+    return false;
+  }
+  let profile: AccountRecord | undefined;
+  try {
+    profile = await store.load(userId);
+  } catch {
+    return false;
+  }
+  if (profile === undefined || profile.accessToken !== undefined || profile.refreshToken !== undefined) {
+    return false;
+  }
+  await store.remove(userId);
+  return true;
 }
 
 /** Copies identity, avatar, zones, and max heart rate from /api/me onto the record. */

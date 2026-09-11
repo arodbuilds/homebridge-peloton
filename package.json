@@ -25,6 +25,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "homebridge-ui/public",
+    "homebridge-ui/server.js",
     "config.schema.json",
     "LICENSE",
     "README.md",
