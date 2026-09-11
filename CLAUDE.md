@@ -28,7 +28,7 @@ Working rules for homebridge-peloton. Read SPEC.md in full before changing anyth
 src/
   platform.ts              Homebridge platform: config load, accessory registry, wiring
   auth/peloton-auth.ts     login, refresh, browserStart, browserFinish; the only file that knows Auth0
-  api/peloton-api.ts       typed wrappers for the four Peloton API calls; takes a token, never stores one
+  api/peloton-api.ts       typed wrappers for the five Peloton API calls; takes a token, never stores one
   store/account-store.ts   per-account persistence (SPEC section 7)
   poller/poller.ts         the polling state machine (SPEC section 8)
   poller/rules.ts          pure functions: trigger matching, zone from sample, hold and dwell logic
