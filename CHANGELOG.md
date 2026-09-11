@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 1.0.0-beta.1.
+All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1.
 
-## 1.0.0-beta.1 (2026-09-11)
+## 0.1.0-beta.1 (2026-09-11)
 
 First beta, to the npm beta tag. Build 4 of 4: banner, README, release prep, and the last Chrome pass findings. Build 3 of 4: config schema, settings page, UI server, device matching by platform. Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 

@@ -1,6 +1,6 @@
 # homebridge-peloton SPEC
 
-Version: draft 4 for 1.0.0-beta.1 (11 September 2026, after build 4 and the last Chrome pass on the Pi)
+Version: draft 4 for 0.1.0-beta.1 (11 September 2026, after build 4 and the last Chrome pass on the Pi)
 Status: source of truth for the build. design/README.md is normative for the settings page layout, copy, and states; this document is normative for everything else. Where the two disagree, this document wins and the design README gets a clarification in the same PR.
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ Not affiliated with Peloton Interactive. Uses Peloton's undocumented member API.
 7. Attention needed sensor: off by default, under Advanced.
 8. The auth layer is owned by this plugin, isolated in one module, with zero runtime dependencies beyond @homebridge/plugin-ui-utils.
 9. Copy rules: no em dashes, sentence case, "sensor" for triggers, "switch" only for the Fast polling switch and the Switch accessory kind.
-10. Beta first: 1.0.0-beta.1 to the npm beta tag, tested on Alex's Pi, then a tester call, then 1.0.0.
+10. Beta first: 0.1.0-beta.1 to the npm beta tag (the version homebridge-notify-switch started at), tested on Alex's Pi, then a tester call, then 1.0.0.
 
 ## 3. Runtime and toolchain
 
@@ -322,14 +322,14 @@ The settings UI server process logs nothing; its failures reach the page as stag
 
 ## 14. Release
 
-- 1.0.0-beta.1 to the npm beta tag through the GitHub release workflow: a GitHub release marked pre-release publishes with `npm publish --tag beta --provenance`, a release marked latest to the latest tag. The workflow checks that the release tag matches package.json. Keywords: homebridge-plugin, homebridge, supports-hap, peloton, homekit, workout, heart-rate, fitness. The plugin icon is not a package.json field: the Homebridge UI takes icons from its central plugin list, which is settled at verification.
+- 0.1.0-beta.1 to the npm beta tag through the GitHub release workflow: a GitHub release marked pre-release publishes with `npm publish --tag beta --provenance`, a release marked latest to the latest tag. The workflow checks that the release tag matches package.json. Keywords: homebridge-plugin, homebridge, supports-hap, peloton, homekit, workout, heart-rate, fitness. The plugin icon is not a package.json field: the Homebridge UI takes icons from its central plugin list, which is settled at verification.
 - README (build 4): the banner with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones.", a one-paragraph purpose, the not-affiliated line, requirements (Homebridge 1.8 or 2.x, Node 20 or later, a Peloton membership), install, the setup walkthrough with the five settings page screenshots under assets/screenshots/, browser sign-in with the Back-button and history alternatives, how it works, privacy and what is stored where, troubleshooting, development, credits, and the status line "Beta. Please report what works and what does not." The hand-edited config.json appendix is gone; the README points at section 6 and config.schema.json instead.
 - CHANGELOG from beta.1, grouped Added, Changed, Fixed.
 - Verification submission only after 1.0.0 and a soak.
 
 ## 15. Open items to settle during beta
 
-Only what is still open after 1.0.0-beta.1. Everything settled in builds 1 to 4 is in the body, with the notes in section 16.
+Only what is still open after 0.1.0-beta.1. Everything settled in builds 1 to 4 is in the body, with the notes in section 16.
 
 1. The Guide's platform code. Device matching (8.3) knows home_bike and home_tread from the Pi rides; a Guide workout's platform has not been observed, so a Guide session matches only device "any" until a poll line at debug shows its code and 8.3 gains it.
 2. Whether Auth0 presents a verification-code step on any household account; if so, verification_required detection needs a fixture, and the settings page message for that stage gets its first real test.
@@ -384,3 +384,4 @@ From the last Chrome pass through the settings page on the Pi, and the release p
 - 14: the release workflow, keywords, README contents, and the plugin icon as the Homebridge UI resolves it.
 - 15: only the open items after beta.1 remain there (the Guide platform code, verification-required accounts, Row hardware); the clarification notes moved to this section.
 - design/README.md: new trigger cards start with the Name prefilled and a zone card's name follows the zone until edited; the banner is regenerated; the iframe height and dark theme link colour clarifications (listed there under Clarifications from build 4).
+- 2 and 14: the first beta is 0.1.0-beta.1, the version homebridge-notify-switch started at, not 1.0.0-beta.1; 1.0.0 stays the goal after the tester call.

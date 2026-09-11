@@ -63,7 +63,7 @@ const STATUS = {
     { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
     { id: 'dev-guide-0001', name: null, group: 'guide' },
   ],
-  version: '1.0.0-beta.1',
+  version: '0.1.0-beta.1',
 };
 
 /** Builds the page for a platform block and the given /status answer, as start() does after getPluginConfig and /status. */
