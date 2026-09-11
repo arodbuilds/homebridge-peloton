@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newTrigger, readConfig, removeAccountEntry, validate,
+  ACTIVITIES, backupBlock, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry,
+  validate,
 } from '../homebridge-ui/public/model.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -49,12 +51,35 @@ describe('account write-back', () => {
     assert.deepEqual(config.accounts.map((account) => account.id), ['a2']);
   });
 
-  it('generates ids with crypto.randomUUID for entries that have none or duplicate another', () => {
+  it('generates ids for entries that have none or duplicate another', () => {
     const config = readConfig({ accounts: [{ email: 'a@example.com' }], triggers: [{ id: 't1', type: 'workout' }, { id: 't1', type: 'workout' }] });
     assert.match(config.accounts[0].id, UUID);
     assert.equal(config.triggers[0].id, 't1');
     assert.match(config.triggers[1].id, UUID);
     assert.match(newTrigger('workout').id, UUID);
+  });
+});
+
+describe('ids', () => {
+  it('uses crypto.randomUUID when the context has it', () => {
+    const fake = {
+      randomUUID: () => 'from-random-uuid',
+      getRandomValues: () => {
+        throw new Error('not used when randomUUID exists');
+      },
+    };
+    assert.equal(newId(fake), 'from-random-uuid');
+    assert.match(newId(), UUID, 'the global crypto object is the default');
+  });
+
+  it('builds a version 4 UUID from getRandomValues when randomUUID is missing, as over plain http', () => {
+    const fake = { getRandomValues: (bytes) => webcrypto.getRandomValues(bytes) };
+    const first = newId(fake);
+    assert.match(first, UUID);
+    assert.notEqual(newId(fake), first);
+    // Sixteen random bytes with the version and variant bits forced.
+    assert.equal(newId({ getRandomValues: (bytes) => bytes.fill(0) }), '00000000-0000-4000-8000-000000000000');
+    assert.equal(newId({ getRandomValues: (bytes) => bytes.fill(0xff) }), 'ffffffff-ffff-4fff-bfff-ffffffffffff');
   });
 });
 

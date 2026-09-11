@@ -35,9 +35,20 @@ export const DEVICES = ['any', 'bike', 'tread'];
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
-/** Ids for accounts and triggers are generated on creation and never shown. */
-export function newId() {
-  return crypto.randomUUID();
+/**
+ * Ids for accounts and triggers are generated on creation and never shown. crypto.randomUUID exists
+ * only in secure contexts, and the Homebridge UI is usually served over plain http, so when it is
+ * missing a version 4 UUID is built from crypto.getRandomValues, which every context has.
+ */
+export function newId(cryptoImpl = globalThis.crypto) {
+  if (typeof cryptoImpl.randomUUID === 'function') {
+    return cryptoImpl.randomUUID();
+  }
+  const bytes = cryptoImpl.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function obj(value) {
