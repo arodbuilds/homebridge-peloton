@@ -7,10 +7,11 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import * as hap from '@homebridge/hap-nodejs';
 
 import { attentionSensorUuid, fastPollingSwitchUuid, triggerUuid } from '../dist/accessories/common.js';
+import { AuthError } from '../dist/auth/peloton-auth.js';
 import { PelotonPlatform } from '../dist/platform.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
-import { apiResponse } from './helpers/fixtures.mjs';
+import { apiResponse, jsonResponse } from './helpers/fixtures.mjs';
 import { createRoutedFetch } from './helpers/routed-fetch.mjs';
 
 const { Accessory, Characteristic, Service } = hap;
@@ -98,24 +99,54 @@ const CONFIG = {
   advanced: { attentionSensor: true },
 };
 
-async function launch({ config = CONFIG, cached = [], records, fetch = createRoutedFetch() } = {}) {
+async function launch({ config = CONFIG, cached = [], records, fetch = createRoutedFetch(), login } = {}) {
   const clock = createFakeClock();
-  await seedStore(clock, records ?? {
+  const store = await seedStore(clock, records ?? {
     a1: connected('u-owner-0001', 'Owner', { isOwner: true, devices: [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }] }),
     a2: { state: 'reconnect_needed', userId: 'u-member-0003', displayName: 'Lifter', username: 'member_lifter' },
     a3: { state: 'not_connected', userId: 'u-member-0002', displayName: 'Member' },
   });
   const api = fakeApi();
   const log = fakeLog();
-  const platform = new PelotonPlatform(log, config, api, { now: clock.now, scheduler: clock, fetchImpl: fetch });
+  const platform = new PelotonPlatform(log, config, api, { now: clock.now, scheduler: clock, fetchImpl: fetch, login });
   for (const accessory of cached) {
     platform.configureAccessory(accessory);
   }
   api.fire('didFinishLaunching');
   await platform.launched;
   clock.idle = () => platform.activePoller?.whenIdle() ?? Promise.resolve();
-  return { platform, api, log, clock, fetch };
+  return { platform, api, log, clock, fetch, store };
 }
+
+/** A login stub that records calls and answers per email with tokens or an Error to throw. */
+function fakeLogin(answers) {
+  const calls = [];
+  const fn = async (email, password) => {
+    calls.push({ email, password });
+    const answer = answers[email];
+    if (answer === undefined) {
+      throw new Error(`unexpected login for ${email}`);
+    }
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer;
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+const TOKENS = { accessToken: 'access-login', refreshToken: 'refresh-login', expiresAt: 1_789_000_000_000 + 48 * HOUR };
+
+const SIGN_IN_CONFIG = {
+  ...CONFIG,
+  accounts: [
+    { id: 'a1', email: 'owner@example.com', password: 'secret-1', displayName: 'Alex' },
+    { id: 'a2', email: 'member@example.com', password: 'secret-2' },
+    { id: 'a3', email: 'other@example.com', password: 'secret-3' },
+    { id: 'a4', email: 'nopassword@example.com' },
+  ],
+};
 
 describe('startup', () => {
   it('registers the configured accessories, refreshes cached ones, and unregisters orphans', async () => {
@@ -170,6 +201,121 @@ describe('startup', () => {
     assert.deepEqual(log.lines.warn, ['polling.fastInterval is below 5, using 5']);
     assert.equal(platform.pelotonConfig.polling.fastInterval, 5);
     assert.ok(platform.activePoller);
+  });
+});
+
+describe('startup sign-in', () => {
+  it('signs in accounts with credentials and no stored sign-in, sequentially, and settles the owner from subscriptions', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/api/me', [apiResponse('me-member'), apiResponse('me-owner')])
+      .route('/subscriptions', apiResponse('subscriptions'))
+      .route('/workouts', apiResponse('workouts-empty'));
+    const login = fakeLogin({ 'owner@example.com': TOKENS, 'member@example.com': { ...TOKENS, accessToken: 'access-member' } });
+    const { log, store, platform, clock } = await launch({
+      fetch,
+      login,
+      // a2 is listed before the owner's profile answers, so owner status cannot come from config order.
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[1], SIGN_IN_CONFIG.accounts[0], SIGN_IN_CONFIG.accounts[3]] },
+      records: {},
+    });
+    assert.deepEqual(login.calls, [{ email: 'member@example.com', password: 'secret-2' }, { email: 'owner@example.com', password: 'secret-1' }]);
+    assert.deepEqual(log.lines.info.slice(0, 3), [
+      'Connected Member Example (@member_runner)',
+      'Connected Alex (@owner_rider)',
+      'a4: not connected, not polling',
+    ]);
+    const owner = await store.load('a1');
+    assert.equal(owner.state, 'connected');
+    assert.equal(owner.accessToken, 'access-login');
+    assert.equal(owner.refreshToken, 'refresh-login');
+    assert.equal(owner.userId, 'u-owner-0001');
+    assert.equal(owner.username, 'owner_rider');
+    assert.equal(owner.displayName, 'Owner Example');
+    assert.equal(owner.imageUrl, 'https://cdn.example.invalid/avatars/u-owner-0001.jpg');
+    assert.equal(owner.isProfileImageDefault, false);
+    assert.equal(owner.maxHr, 168);
+    assert.equal(owner.hrZones.length, 5);
+    assert.equal(owner.isOwner, true);
+    assert.deepEqual(owner.devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    const member = await store.load('a2');
+    assert.equal(member.state, 'connected');
+    assert.equal(member.userId, 'u-member-0002');
+    assert.equal(member.isOwner, false);
+    assert.equal(member.devices, undefined);
+    assert.deepEqual([...(await store.loadAll()).keys()].sort(), ['a1', 'a2', 'u-member-0003']);
+    assert.equal((await store.loadAll()).get('u-member-0003').state, 'not_connected');
+    assert.deepEqual(platform.activePoller.activeAccountIds.sort(), ['a1', 'a2']);
+    await clock.advance(0);
+    assert.ok(fetch.calls('/api/user/u-member-0002/workouts').length >= 1);
+    assert.equal(fetch.calls('/api/user/u-owner-0001/workouts')[0]?.headers.authorization ?? 'Bearer access-login', 'Bearer access-login');
+  });
+
+  it('logs one line and leaves the record untouched when the sign-in fails, then skips the account', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/workouts', apiResponse('workouts-empty'));
+    const login = fakeLogin({ 'owner@example.com': new AuthError('credentials', 401), 'other@example.com': new AuthError('authorize', 403) });
+    const before = { state: 'reconnect_needed', userId: 'u-owner-0001', displayName: 'Owner', lastError: { stage: 'refresh', status: 403, at: 1 } };
+    const { log, store, platform } = await launch({
+      fetch,
+      login,
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[0], SIGN_IN_CONFIG.accounts[2]] },
+      records: { a1: before },
+    });
+    assert.equal(login.calls.length, 2);
+    assert.deepEqual(log.lines.info, [
+      'Alex: sign-in failed at stage credentials, HTTP 401; use the settings page to connect',
+      'a3: sign-in failed at stage authorize, HTTP 403; use the settings page to connect',
+      'Alex: reconnect needed, not polling until the account is connected again',
+      'a3: not connected, not polling',
+    ]);
+    assert.deepEqual(await store.load('a1'), before);
+    assert.equal(await store.load('a3'), undefined);
+    assert.deepEqual(platform.activePoller.activeAccountIds, []);
+  });
+
+  it('never re-logs in an account whose tokens are stored', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/workouts', apiResponse('workouts-empty'));
+    const login = fakeLogin({});
+    const { log, store } = await launch({
+      fetch,
+      login,
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[0]] },
+      records: { a1: connected('u-owner-0001', 'Owner') },
+    });
+    assert.deepEqual(login.calls, []);
+    assert.equal((await store.load('a1')).accessToken, 'access-1');
+    assert.deepEqual(log.lines.info, []);
+  });
+
+  it('re-logs in once after invalid_grant when config has a password, and resumes polling', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/api/user/u-owner-0001/workouts', [jsonResponse(401, {}), apiResponse('workouts-empty')])
+      .route('/api/me', apiResponse('me-owner'))
+      .route('/subscriptions', apiResponse('subscriptions'))
+      .route('/oauth/token', jsonResponse(403, { error: 'invalid_grant', error_description: 'expired' }));
+    const login = fakeLogin({ 'owner@example.com': TOKENS });
+    const { log, store, platform, clock } = await launch({
+      fetch,
+      login,
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[0]] },
+      records: { a1: connected('u-owner-0001', 'Owner') },
+    });
+    await clock.advance(0);
+    assert.deepEqual(login.calls, [{ email: 'owner@example.com', password: 'secret-1' }]);
+    assert.deepEqual(log.lines.info, [
+      'Alex: sign-in expired, reconnect needed (stage refresh, HTTP 403)',
+      'Connected Alex (@owner_rider)',
+    ]);
+    assert.equal((await store.load('a1')).state, 'connected');
+    assert.deepEqual(platform.activePoller.activeAccountIds, ['a1']);
+    const attention = platform.accessories.get(attentionSensorUuid(hap));
+    assert.equal(
+      attention.getService(Service.OccupancySensor).getCharacteristic(Characteristic.OccupancyDetected).value,
+      Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED,
+    );
+    await clock.advance(120_000);
+    assert.equal(fetch.calls('/api/user/u-owner-0001/workouts').at(-1).headers.authorization, 'Bearer access-login');
   });
 });
 

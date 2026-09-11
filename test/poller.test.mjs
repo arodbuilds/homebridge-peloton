@@ -67,7 +67,7 @@ function graphBody(bpm, offset) {
   return jsonResponse(200, body);
 }
 
-async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], refresh, records = {}, deviceMaps } = {}) {
+async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], refresh, records = {}, deviceMaps, reconnect } = {}) {
   const clock = createFakeClock();
   const fetch = createRoutedFetch();
   const lines = { info: [], warn: [], debug: [] };
@@ -109,7 +109,7 @@ async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], ref
     getSubscriptions: (userId, token) => getSubscriptions(userId, token, fetch),
   };
   const config = parseConfig({ triggers: [workoutTrigger()], ...rawConfig }, { warn: log.warn });
-  const poller = new Poller({ config, accounts, api, store, log, now: clock.now, scheduler: clock, deviceMaps });
+  const poller = new Poller({ config, accounts, api, store, log, now: clock.now, scheduler: clock, deviceMaps, reconnect });
   clock.idle = () => poller.whenIdle();
   const events = [];
   const eventNames = [
@@ -504,6 +504,57 @@ describe('failures', () => {
     await h.clock.advance(10 * 60_000);
     assert.equal(h.fetch.count(LIST_OWNER), 1);
     assert.ok(h.fetch.count(LIST_MEMBER) > 1);
+  });
+
+  it('calls reconnect once after invalid_grant and resumes polling when it returns an account', async () => {
+    const reconnectCalls = [];
+    const h = await harness({
+      accounts: [OWNER],
+      refresh: async () => {
+        throw new AuthError('refresh', 403, 'invalid_grant');
+      },
+      reconnect: async (accountId) => {
+        reconnectCalls.push(accountId);
+        await h.store.save('a1', {
+          ...(await h.store.load('a1')),
+          state: 'connected',
+          accessToken: 'access-new',
+          accessTokenExpiresAt: h.clock.now() + 48 * HOUR,
+          refreshToken: 'refresh-new',
+        });
+        return OWNER;
+      },
+    });
+    h.fetch.route(LIST_OWNER, [jsonResponse(401, {}), apiResponse('workouts-empty')]);
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(reconnectCalls, ['a1']);
+    assert.deepEqual(h.named('accountStateChanged').map((event) => event.state), ['reconnect_needed', 'connected']);
+    assert.deepEqual(h.poller.activeAccountIds, ['a1']);
+    await h.clock.advance(120_000);
+    assert.equal(h.fetch.calls(LIST_OWNER).at(-1).headers.authorization, 'Bearer access-new');
+    assert.deepEqual(reconnectCalls, ['a1']);
+  });
+
+  it('leaves the account dropped when reconnect returns nothing, without retrying', async () => {
+    const reconnectCalls = [];
+    const h = await harness({
+      accounts: [OWNER],
+      refresh: async () => {
+        throw new AuthError('refresh', 403, 'invalid_grant');
+      },
+      reconnect: async (accountId) => {
+        reconnectCalls.push(accountId);
+        return undefined;
+      },
+    });
+    h.fetch.route(LIST_OWNER, jsonResponse(401, {}));
+    h.poller.start();
+    await h.clock.advance(10 * 60_000);
+    assert.deepEqual(reconnectCalls, ['a1']);
+    assert.deepEqual(h.named('accountStateChanged').map((event) => event.state), ['reconnect_needed']);
+    assert.deepEqual(h.poller.activeAccountIds, []);
+    assert.equal(h.fetch.count(LIST_OWNER), 1);
   });
 
   it('ends a locked workout when the locked account loses its sign-in', async () => {
