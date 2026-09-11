@@ -176,7 +176,12 @@ async function commandLogin(args: Args): Promise<void> {
   if (args.dump !== undefined) {
     console.log(`Writing redacted HTML dumps to ${args.dump}`);
   }
-  const tokens = await login(email, password, fetch, { debugDump: args.dump });
+  const tokens = await login(email, password, fetch, {
+    debugDump: args.dump,
+    onLoginPage: (target) => {
+      console.log(`Login page parsed: domain ${target.auth0Domain}, tenant ${target.auth0Tenant}, connection ${target.connection}`);
+    },
+  });
   await saveTokens(tokens);
   console.log(`Login ok, ${describeExpiry(tokens)}. Tokens saved to ${TOKEN_FILE}.`);
 }

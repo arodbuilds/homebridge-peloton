@@ -24,4 +24,5 @@ Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 
 ### Fixed
 
+- Headless login failed at the credentials POST with HTTP 403 AnomalyDetected "Invalid state" on the first Pi run. The module now parses `window.injectedConfig` from the login page, checks that its code_challenge and nonce are ours, and posts every internalOptions value verbatim (Auth0's transaction state and `_csrf` among them) with the tenant and callback URL from the page. The confirmed tenant is "peloton-prod" and the connection "pelo-user-password". A 403 AnomalyDetected response maps to stage authorize so the settings page offers the browser fallback, and `access_denied` counts as a wrong password only when the description says so. The probe prints the tenant and connection it is about to use.
 - The account store re-reads the record before refreshing, so a caller that loaded the record before another caller's rotation reuses that rotation instead of sending the retired refresh token to Auth0, which would have marked the account reconnect_needed for no reason.

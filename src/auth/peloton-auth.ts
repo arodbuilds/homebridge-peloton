@@ -12,7 +12,8 @@ import { join } from 'node:path';
 /**
  * Everything Peloton-specific about the login. These constants are the only thing to change
  * when Peloton changes its login (tenant, client, redirect, or the Auth0 connection name).
- * tenant and connection are initial values to confirm on the Pi (SPEC section 15).
+ * tenant and connection were confirmed against the live login page in the build 1 Pi probe
+ * (SPEC section 4.1 and section 15).
  */
 export const PELOTON_AUTH = {
   /** Auth0 tenant base URL. */
@@ -25,10 +26,16 @@ export const PELOTON_AUTH = {
   scope: 'offline_access openid peloton-api.members:default',
   /** API audience. */
   audience: 'https://api.onepeloton.com/',
-  /** Auth0 tenant name sent in the credentials POST. Confirm on the Pi. */
-  tenant: 'peloton',
-  /** Auth0 database connection name sent in the credentials POST. Confirm on the Pi. */
-  connection: 'PelotonIDS',
+  /**
+   * Auth0 tenant name. Confirmed: the login page carries it as auth0Tenant in window.injectedConfig,
+   * and the credentials POST sends the parsed value. This constant is the reference the tests check.
+   */
+  tenant: 'peloton-prod',
+  /**
+   * Auth0 database connection name sent in the credentials POST. Confirmed: the client
+   * configuration script lists the auth0 strategy with this single connection.
+   */
+  connection: 'pelo-user-password',
   /** Cookie Auth0 sets on the login page and the header it expects back on the credentials POST. */
   csrfCookie: '_csrf',
   csrfHeader: 'x-csrf-token',
@@ -89,6 +96,44 @@ export interface AuthOptions {
    * numbered name and all form values redacted. Token responses are never written. Off by default.
    */
   debugDump?: string;
+  /**
+   * Called once the login page has been parsed, just before the credentials POST, with the tenant
+   * and connection the POST is about to use. The probe prints them so a Pi run confirms them.
+   */
+  onLoginPage?: (target: LoginTarget) => void;
+}
+
+/** What the credentials POST targets, as parsed from the login page and the constants above. */
+export interface LoginTarget {
+  auth0Domain: string;
+  auth0Tenant: string;
+  connection: string;
+}
+
+/**
+ * Auth0's transaction as the login page embeds it in internalOptions. state is Auth0's own
+ * transaction state, about 160 characters, and differs from the state on the authorize URL.
+ * nonce and code_challenge echo what was sent on the authorize URL. Every other key is passed
+ * through to the credentials POST verbatim.
+ */
+export interface LoginPageInternalOptions {
+  state: string;
+  nonce?: string;
+  code_challenge?: string;
+  _csrf?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * The parts of window.injectedConfig on the login page that the credentials POST needs.
+ * The page also carries assetsUrl, cdn, colors, dict, extraParams, icon, and widgetUrl, which are ignored.
+ */
+export interface LoginPageConfig {
+  auth0Domain: string;
+  auth0Tenant: string;
+  callbackURL: string;
+  clientID: string;
+  internalOptions: LoginPageInternalOptions;
 }
 
 type FetchImpl = typeof fetch;
@@ -111,10 +156,14 @@ const VERIFICATION_MARKERS = [
   /multi[- ]?factor/i,
 ];
 
+/**
+ * Codes on the credentials POST that mean the password was wrong. access_denied is not one of
+ * them: Auth0 uses it for request-shape failures too (AnomalyDetected, "Invalid state"), so it
+ * counts only when the description says wrong password.
+ */
 const WRONG_PASSWORD_CODES = new Set([
   'invalid_user_password',
   'invalid_grant',
-  'access_denied',
   'wrong_email_or_password',
   'invalid_password',
   'invalid_credentials',
@@ -158,27 +207,37 @@ export async function login(
   // contain words such as "passwordless" and "verify your email" for every account. The check runs
   // on the credentials response, the callback page, and the token error path only.
 
-  // 2. POST the credentials as JSON with the CSRF header derived from the cookie Auth0 set.
+  // 2. Read Auth0's transaction from window.injectedConfig on the login page. It must echo the
+  //    challenge and nonce sent on the authorize URL; internalOptions.state is Auth0's own
+  //    transaction state and is what the credentials POST has to carry.
+  const config = parseLoginPageConfig(loginPage.body);
+  if (config === undefined) {
+    throw new AuthError('authorize', loginPage.status);
+  }
+  if (config.internalOptions.code_challenge !== challenge || config.internalOptions.nonce !== nonce) {
+    throw new AuthError('state_mismatch', loginPage.status);
+  }
+  options.onLoginPage?.({
+    auth0Domain: config.auth0Domain,
+    auth0Tenant: config.auth0Tenant,
+    connection: PELOTON_AUTH.connection,
+  });
+
+  // 3. POST the credentials as JSON: every internalOptions key verbatim (state, _csrf, _intstate,
+  //    audience, code_challenge, code_challenge_method, nonce, protocol, response_type, scope) plus
+  //    the client, redirect, tenant, connection, and the credentials. The body _csrf comes from the
+  //    page config; the x-csrf-token header carries the _csrf cookie when Auth0 set one.
   const credentialsUrl = new URL(PELOTON_AUTH.credentialsPath, PELOTON_AUTH.tenantUrl);
   const csrf = jar.get(credentialsUrl, PELOTON_AUTH.csrfCookie);
-  const credentialsBody: Record<string, string> = {
+  const credentialsBody: Record<string, unknown> = {
+    ...config.internalOptions,
     client_id: PELOTON_AUTH.clientId,
-    redirect_uri: PELOTON_AUTH.redirectUri,
-    tenant: PELOTON_AUTH.tenant,
-    response_type: 'code',
-    scope: PELOTON_AUTH.scope,
-    audience: PELOTON_AUTH.audience,
-    state,
-    nonce,
+    redirect_uri: config.callbackURL,
+    tenant: config.auth0Tenant,
     connection: PELOTON_AUTH.connection,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
     username: email,
     password,
   };
-  if (csrf !== undefined) {
-    credentialsBody[PELOTON_AUTH.csrfCookie] = csrf;
-  }
   const credentialsHeaders: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'text/html,application/json',
@@ -204,7 +263,7 @@ export async function login(
     throw new AuthError('verification_required', credentialsResponse.status);
   }
 
-  // 3. Parse the auto-post form Auth0 returned and post it to its action.
+  // 4. Parse the auto-post form Auth0 returned and post it to its action.
   const form = parseForm(credentialsText);
   if (form === undefined) {
     throw new AuthError('callback', credentialsResponse.status);
@@ -221,7 +280,8 @@ export async function login(
     body: new URLSearchParams(form.fields).toString(),
   }, 'callback');
 
-  // 4. Do not follow the final redirect. Read code and state from its Location header.
+  // 5. Do not follow the final redirect. Read code and state from its Location header. Auth0
+  //    restores the state from the authorize URL here, not its transaction state.
   if (callback.kind !== 'left_tenant') {
     await dump.write('callback-response', callback.body);
     if (looksLikeVerification(callback.body)) {
@@ -234,7 +294,7 @@ export async function login(
     throw new AuthError('state_mismatch', callback.status);
   }
 
-  // 5. Exchange the code.
+  // 6. Exchange the code.
   return exchangeCode(redirect.code, verifier, fetchImpl, now);
 }
 
@@ -501,17 +561,79 @@ function classifyCredentialsFailure(status: number, body: string): AuthError {
   const wrongPassword = (code !== undefined && WRONG_PASSWORD_CODES.has(code.toLowerCase()))
     || /wrong (email|username|user)( or|\/)? ?password/i.test(haystack)
     || /invalid (email|username)? ?(or|\/)? ?password/i.test(haystack)
-    || status === 401
-    || status === 403;
+    || status === 401;
   if (wrongPassword) {
     return new AuthError('credentials', status, code);
   }
-  // Anything else on this step is Peloton's side (rate limit, outage), not the user's credentials.
+  // Anything else on this step is not the user's credentials: a rate limit, an outage, or a
+  // request Auth0 rejects (403 AnomalyDetected "Invalid state" when the body carries the wrong
+  // state). The settings page then offers the browser fallback.
   return new AuthError('authorize', status, code);
 }
 
 function looksLikeVerification(text: string): boolean {
   return VERIFICATION_MARKERS.some((marker) => marker.test(text));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Login page configuration (window.injectedConfig)
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The login page embeds its configuration on one line as
+ * window.injectedConfig = window.injectedConfig || "<base64 JSON>";
+ * and decodes it with decodeURIComponent(escape(window.atob(...))), which is a UTF-8 decode.
+ */
+const INJECTED_CONFIG_PATTERN = /window\.injectedConfig\s*=\s*window\.injectedConfig\s*\|\|\s*(["'])([^"']*)\1/;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * Reads window.injectedConfig from the login page. Returns undefined when the line is missing,
+ * the base64 does not decode, the JSON does not parse, or a field the credentials POST needs is
+ * absent. Values are never logged; the caller maps undefined to AuthError stage authorize.
+ */
+export function parseLoginPageConfig(html: string): LoginPageConfig | undefined {
+  const match = INJECTED_CONFIG_PATTERN.exec(html);
+  const encoded = match?.[2];
+  if (encoded === undefined || encoded.length === 0 || !BASE64_PATTERN.test(encoded)) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    return undefined;
+  }
+  const record = parsed as Record<string, unknown>;
+  const auth0Domain = record.auth0Domain;
+  const auth0Tenant = record.auth0Tenant;
+  const callbackURL = record.callbackURL;
+  const clientID = record.clientID;
+  const internalOptions = record.internalOptions;
+  if (typeof auth0Domain !== 'string' || typeof auth0Tenant !== 'string' || auth0Tenant.length === 0
+    || typeof callbackURL !== 'string' || callbackURL.length === 0 || typeof clientID !== 'string'
+    || internalOptions === null || typeof internalOptions !== 'object' || Array.isArray(internalOptions)) {
+    return undefined;
+  }
+  const transaction = internalOptions as Record<string, unknown>;
+  if (typeof transaction.state !== 'string' || transaction.state.length === 0) {
+    return undefined;
+  }
+  const options: LoginPageInternalOptions = {
+    ...transaction,
+    state: transaction.state,
+    nonce: optionalString(transaction.nonce),
+    code_challenge: optionalString(transaction.code_challenge),
+    _csrf: optionalString(transaction._csrf),
+  };
+  return { auth0Domain, auth0Tenant, callbackURL, clientID, internalOptions: options };
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sign in to Peloton</title>
+  <title>Log in | Peloton</title>
+  <link rel="stylesheet" href="https://cdn.auth0.com/styleguide/components/1.0.8/components.min.css">
 </head>
 <body>
-  <div id="lock-container"></div>
+  <div class="auth0-lock-container"></div>
+  <script src="https://cdn.auth0.com/w2/auth0-widget-5.2.min.js"></script>
   <script>
-    window.atob = window.atob || function () {};
-    var config = JSON.parse(decodeURIComponent(escape(window.atob('cmVkYWN0ZWQ='))));
-    var lock = new Auth0Lock(config.clientID, config.auth0Domain, {
-      auth: { redirectUrl: config.callbackURL, responseType: 'code', params: config.internalOptions }
-    });
-    lock.show();
+    window.injectedConfig = window.injectedConfig || "eyJhc3NldHNVcmwiOiIiLCJhdXRoMERvbWFpbiI6ImF1dGgub25lcGVsb3Rvbi5jb20iLCJhdXRoMFRlbmFudCI6InBlbG90b24tcHJvZCIsImF1dGhvcml6YXRpb25TZXJ2ZXIiOnsidXJsIjoiaHR0cHM6Ly9hdXRoLm9uZXBlbG90b24uY29tIiwiaXNzdWVyIjoiaHR0cHM6Ly9hdXRoLm9uZXBlbG90b24uY29tLyJ9LCJjYWxsYmFja09uTG9jYXRpb25IYXNoIjpmYWxzZSwiY2FsbGJhY2tVUkwiOiJodHRwczovL21lbWJlcnMub25lcGVsb3Rvbi5jb20vY2FsbGJhY2siLCJjZG4iOiJodHRwczovL2Nkbi5hdXRoMC5jb20iLCJjbGllbnRDb25maWd1cmF0aW9uQmFzZVVybCI6Imh0dHBzOi8vYXV0aC5vbmVwZWxvdG9uLmNvbS8iLCJjbGllbnRJRCI6IldWb0p4VkRkUG9GeDRSTmV3dnZnNmNoMm1aN2J3bnNNIiwiY29sb3JzIjp7InBhZ2VfYmFja2dyb3VuZCI6IiMwMDAwMDAiLCJwcmltYXJ5IjoiI2RmMWMyZiJ9LCJkaWN0Ijp7InNpZ25pbiI6eyJ0aXRsZSI6IlBlbG90b24ifX0sImV4dHJhUGFyYW1zIjp7Il9jc3JmIjoicmVkYWN0ZWQtcGFnZS1jc3JmIiwiX2ludHN0YXRlIjoiZGVwcmVjYXRlZCIsImF1ZGllbmNlIjoiaHR0cHM6Ly9hcGkub25lcGVsb3Rvbi5jb20vIiwiY29kZV9jaGFsbGVuZ2UiOiJ7e2NvZGVfY2hhbGxlbmdlfX0iLCJjb2RlX2NoYWxsZW5nZV9tZXRob2QiOiJTMjU2Iiwibm9uY2UiOiJ7e25vbmNlfX0iLCJwcm90b2NvbCI6Im9hdXRoMiIsInJlc3BvbnNlX3R5cGUiOiJjb2RlIiwic2NvcGUiOiJvZmZsaW5lX2FjY2VzcyBvcGVuaWQgcGVsb3Rvbi1hcGkubWVtYmVyczpkZWZhdWx0Iiwic3RhdGUiOiJoS0ZvMlNCNURWa3lubHhYNGR4cFg2NUdzUmRrTkhRZE1oMXZ3RjFSMkVMdmNPQkkyUGVJRFp6czdGaTN3akdvTjRmOGh0VDRXQXhhVTBxbUExUWcyWTl4NEVUNm1yY2FsZUhpS3FwU01vT1gwb1ZtTnpSYVZPbEpKeXhwaGh2bXBEcGN6NkxkcGUwY01FV0hNUTUxYjdhSVlRUHhZejZHIn0sImljb24iOiJodHRwczovL21lbWJlcnMub25lcGVsb3Rvbi5jb20vcmVkYWN0ZWQtaWNvbi5wbmciLCJpbnRlcm5hbE9wdGlvbnMiOnsiX2NzcmYiOiJyZWRhY3RlZC1wYWdlLWNzcmYiLCJfaW50c3RhdGUiOiJkZXByZWNhdGVkIiwiYXVkaWVuY2UiOiJodHRwczovL2FwaS5vbmVwZWxvdG9uLmNvbS8iLCJjb2RlX2NoYWxsZW5nZSI6Int7Y29kZV9jaGFsbGVuZ2V9fSIsImNvZGVfY2hhbGxlbmdlX21ldGhvZCI6IlMyNTYiLCJub25jZSI6Int7bm9uY2V9fSIsInByb3RvY29sIjoib2F1dGgyIiwicmVzcG9uc2VfdHlwZSI6ImNvZGUiLCJzY29wZSI6Im9mZmxpbmVfYWNjZXNzIG9wZW5pZCBwZWxvdG9uLWFwaS5tZW1iZXJzOmRlZmF1bHQiLCJzdGF0ZSI6ImhLRm8yU0I1RFZreW5seFg0ZHhwWDY1R3NSZGtOSFFkTWgxdndGMVIyRUx2Y09CSTJQZUlEWnpzN0ZpM3dqR29ONGY4aHRUNFdBeGFVMHFtQTFRZzJZOXg0RVQ2bXJjYWxlSGlLcXBTTW9PWDBvVm1OelJhVk9sSkp5eHBoaHZtcERwY3o2TGRwZTBjTUVXSE1RNTFiN2FJWVFQeFl6NkcifSwiaXNUaGlyZFBhcnR5Q2xpZW50IjpmYWxzZSwid2lkZ2V0VXJsIjoiaHR0cHM6Ly9jZG4uYXV0aDAuY29tL3cyL2F1dGgwLXdpZGdldC01LjIubWluLmpzIn0=";
+    var config = JSON.parse(decodeURIComponent(escape(window.atob(window.injectedConfig))));
+    var params = Object.assign({ overrides: { __tenant: config.auth0Tenant, __token_issuer: config.authorizationServer.issuer }, domain: config.auth0Domain, clientID: config.clientID, redirectUri: config.callbackURL, responseType: 'code' }, config.internalOptions);
+    var widget = new Auth0Widget(params);
+    widget.show({ callbackURL: config.callbackURL, responseType: 'code', dict: config.dict, extraParameters: config.extraParams, icon: config.icon, cdn: config.cdn });
   </script>
 </body>
 </html>
