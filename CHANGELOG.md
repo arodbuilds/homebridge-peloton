@@ -17,3 +17,11 @@ Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 - Test suites for auth, api, and store with a fake fetch that replays fixtures in sequence and records requests.
 - Standalone auth probe for the Pi (`dist/scripts/auth-probe.mjs`) with login, refresh, browser, me, and workout commands.
 - CLAUDE.md with the working rules, README first pass, and this changelog.
+
+### Changed
+
+- Verification detection no longer runs on the initial login page, whose bundled Lock library and text dictionary contain verification words for every account. It runs on the credentials response, the callback page, and the token error path only.
+
+### Fixed
+
+- The account store re-reads the record before refreshing, so a caller that loaded the record before another caller's rotation reuses that rotation instead of sending the retired refresh token to Auth0, which would have marked the account reconnect_needed for no reason.
