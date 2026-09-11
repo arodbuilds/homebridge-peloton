@@ -1,7 +1,20 @@
 /**
  * The Peloton platform: loads config, opens the account store, constructs the poller with the real
- * clock, registers accessories, and connects poller events to them.
+ * clock, reconciles the accessories with config, and connects poller events to them.
  * Info log lines are the ones SPEC section 11 lists and nothing more.
+ *
+ * Reconciliation by id (SPEC sections 6 and 9), on every start and so after every config change,
+ * since Homebridge restarts the plugin when config.json is saved:
+ * - triggers: a trigger id with no cached accessory gets one registered; a cached accessory whose id
+ *   left config is unregistered; a cached one whose accessory kind changed has its service swapped
+ *   in place (TriggerSensor), keeping the UUID and therefore the HomeKit automations; every kept
+ *   accessory is renamed from its trigger and passed to updatePlatformAccessories.
+ * - accounts: the account store is keyed by config account id. An account with email and password
+ *   but no usable stored sign-in is signed in at startup (the build 2 path); a household profile the
+ *   owner's subscriptions created for the same member is removed once that sign-in names its userId
+ *   (connectWithTokens), so the page shows one card per member. Records the settings page removed
+ *   are gone already (/remove); records whose id left config by hand edit are left in place and
+ *   ignored. Connected accounts with a userId are polled, the rest are skipped with one info line.
  */
 
 import type { API, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig } from 'homebridge';
@@ -78,7 +91,7 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
 
     const accounts = this.selectAccounts(config, records);
 
-    this.registerAccessories();
+    this.reconcileAccessories();
 
     const fetchImpl = this.deps.fetchImpl;
     const pollerLog: PollerLog = {
@@ -199,8 +212,8 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
     return accounts;
   }
 
-  /** Creates or refreshes every accessory the config wants and unregisters the rest. */
-  private registerAccessories(): void {
+  /** Creates or refreshes every accessory the config wants, by trigger id, and unregisters the rest. */
+  private reconcileAccessories(): void {
     const config = this.pelotonConfig;
     const { hap } = this.api;
     const wanted = new Set<string>();
