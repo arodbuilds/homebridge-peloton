@@ -1,0 +1,50 @@
+{
+  "data": [
+    {
+      "id": "sub-0001",
+      "status": "active_normal",
+      "owner": {
+        "id": "u-owner-0001",
+        "username": "owner_rider"
+      },
+      "max_shared_users": 20,
+      "shared_user_set": [
+        {
+          "id": "u-member-0002",
+          "username": "member_runner",
+          "first_name": "Member",
+          "last_name": "Example",
+          "image_url": "https://cdn.example.invalid/avatars/default.png",
+          "is_profile_image_default": true,
+          "last_workout_at": null
+        },
+        {
+          "id": "u-member-0003",
+          "username": "member_lifter",
+          "first_name": "Lifter",
+          "last_name": "Example",
+          "image_url": "https://cdn.example.invalid/avatars/u-member-0003.jpg",
+          "is_profile_image_default": false,
+          "last_workout_at": 1788900000
+        }
+      ],
+      "attached_devices": [
+        { "id": "dev-bike-0001", "name": "Bike+", "device_type": "home_bike_plus" }
+      ]
+    },
+    {
+      "id": "sub-0002",
+      "status": "unused",
+      "owner": {
+        "id": "u-owner-0001",
+        "username": "owner_rider"
+      },
+      "max_shared_users": 20,
+      "shared_user_set": [],
+      "attached_devices": []
+    }
+  ],
+  "limit": 10,
+  "page": 0,
+  "total": 2
+}

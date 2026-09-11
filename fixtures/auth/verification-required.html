@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Verify your identity</title>
+</head>
+<body>
+  <main>
+    <h1>Verify your identity</h1>
+    <p>We have sent a verification code to your email. Enter the code below to continue.</p>
+    <form method="post" action="/u/mfa-email-challenge?state=redacted-mfa-state">
+      <input type="hidden" name="state" value="redacted-mfa-state">
+      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code">
+      <button type="submit">Continue</button>
+    </form>
+  </main>
+</body>
+</html>

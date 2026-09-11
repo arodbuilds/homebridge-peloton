@@ -1,13 +1,13 @@
 {
   "bridge": {
-    "name": "PluginTemplate",
+    "name": "Peloton Dev",
     "username": "AA:BB:CC:DD:EE:FF",
     "port": 51826,
     "pin": "031-45-154"
   },
-  "description": "HomeBridge HTTP Status Control",
+  "description": "homebridge-peloton development bridge",
   "plugins": [
-    "homebridge-plugin-name",
+    "homebridge-peloton",
     "homebridge-config-ui-x"
   ],
   "platforms": [
@@ -23,8 +23,8 @@
       "debug": false
     },
     {
-      "name": "homebridge-plugin-name",
-      "platform": "ExampleHomebridgePlugin"
+      "name": "Peloton",
+      "platform": "Peloton"
     }
   ],
   "accessories": []

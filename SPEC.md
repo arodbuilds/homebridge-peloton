@@ -80,6 +80,7 @@ src/
   poller/rules.ts      pure functions: does this workout match this trigger; zone from sample; hold and dwell logic
   accessories/         trigger sensor, fast polling switch, attention sensor
   ui/server.ts         @homebridge/plugin-ui-utils server (10)
+  scripts/auth-probe.mts   standalone auth probe for the Pi, compiled to dist/scripts/auth-probe.mjs (build 1 clarification, see 15)
 homebridge-ui/public/  settings page (design/README.md)
 fixtures/              recorded, sanitised JSON used by tests
 ```
@@ -252,7 +253,27 @@ Debug level (config.debug): each poll result with workout id, status, discipline
 
 ## 15. Open items to settle during beta
 
-1. The device id field on workouts (8.3).
+1. The device id field on workouts (8.3). The probe's `workout --keys` command prints the raw field names of the latest workout to settle this.
 2. Whether Auth0 presents a verification-code step on any household account; if so, verification_required detection needs a fixture.
 3. Whether performance_graph carries heart_rate zone bounds on non-cycling workouts.
 4. Real-world start latency at fastInterval 10 with four accounts staggered.
+5. Auth0 tenant name "peloton" (PELOTON_AUTH.tenant in src/auth/peloton-auth.ts): confirm on the Pi in build 1 live test.
+6. Auth0 connection name "PelotonIDS" (PELOTON_AUTH.connection in src/auth/peloton-auth.ts): confirm on the Pi in build 1 live test.
+7. CSRF handling on the credentials POST: the module sends the value of the `_csrf` cookie both as the `x-csrf-token` header and as a `_csrf` body field. Confirm on the Pi which one Auth0 requires and drop the other.
+8. Shapes assumed without a live capture, to confirm from the probe: customized_heart_rate_zones on /api/me as objects with slug, min_value, and max_value; paired_devices entries carrying id and name; seconds_since_pedaling_start on performance_graph as an array of sample offsets.
+
+### Build 1 clarifications
+
+Deviations from the text above that build 1 had to make. Each is a clarification to this document, not a change to the decisions in section 2.
+
+- 4.1 and 13: fixtures/auth/ is synthesised from this section and Auth0's documented Universal Login behaviour, not recorded from a live capture. Replace the files after the first Pi run, keeping the names and sanitisation rules in fixtures/README.md.
+- 4.1: any failure on the credentials POST that does not indicate a wrong password or a verification step (rate limit, 5xx) maps to stage authorize, not credentials, so the settings page shows the browser fallback message rather than a wrong password message.
+- 4.2: seconds_since_pedaling_start is an array of sample offsets, one per value in each metric's values[]. The wrapper returns it as a number array; the last element is the time of the latest sample.
+- 5: the src tree gains scripts/auth-probe.mts, compiled by the normal build to dist/scripts/auth-probe.mjs. It imports the auth and api modules and nothing else.
+- 5.1: AuthError also carries an optional `code`, the OAuth error code when the response had one (for example invalid_grant). The store uses it to tell a dead session from a transient refresh failure, as 4.1 requires. Stage and status stay the only values that reach log lines.
+- 7: on invalid_grant the store sets state reconnect_needed and lastError, and also removes the dead accessToken, accessTokenExpiresAt, and refreshToken from the record. Identity fields, zones, and maxHr are kept so the settings page can still show the profile.
+- 7: withValidToken refreshes at most once per call. A second 401 after a successful refresh is rethrown as ApiError so the poller's transient-failure handling in 8.2 applies.
+- 7: before refreshing, the store re-reads the account file. If another caller has already persisted a rotation with a fresh access token, that rotation is reused; a retired refresh token is never sent to Auth0.
+- 13: the probe in this repository (dist/scripts/auth-probe.mjs) is the live verification tool from build 1 on; peloton-test/p.mjs remains the record of the original capture.
+- Toolchain: engines.node is ">=20" per the build brief, where notify-switch pins ^22.12.0. CI runs Node 20, 22, and 24.
+- 4.1 and 5.1: verification_required detection does not run on the initial login page returned by GET /authorize. Universal Login bundles its Lock library and text dictionary, which contain words such as "passwordless" and "verify your email" whatever the account's settings, so a check there fails every login. The check runs on the credentials response, the callback page, and the token error path only.

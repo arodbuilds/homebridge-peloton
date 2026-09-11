@@ -1,9 +1,9 @@
 /**
- * This is the name of the platform that users will use to register the plugin in the Homebridge config.json
+ * The platform name users put in config.json under "platform".
  */
-export const PLATFORM_NAME = 'ExampleHomebridgePlugin';
+export const PLATFORM_NAME = 'Peloton';
 
 /**
- * This must match the name of your plugin as defined the package.json `name` property
+ * Must match the "name" field in package.json.
  */
-export const PLUGIN_NAME = 'homebridge-plugin-name';
+export const PLUGIN_NAME = 'homebridge-peloton';

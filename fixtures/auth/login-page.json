@@ -1,0 +1,10 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "set-cookie": [
+      "_csrf=redacted-csrf; Path=/; HttpOnly; Secure; SameSite=None"
+    ]
+  },
+  "bodyFile": "login-page.html"
+}

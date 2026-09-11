@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"access_token\":\"redacted\",\"refresh_token\":\"redacted\",\"id_token\":\"redacted\",\"scope\":\"offline_access openid peloton-api.members:default\",\"expires_in\":172800,\"token_type\":\"Bearer\"}"
+}

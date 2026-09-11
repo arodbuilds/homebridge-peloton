@@ -1,0 +1,56 @@
+name: Publish to npm
+
+# Publishes through npm trusted publishing (OIDC), so no npm token is stored in the repo.
+# A GitHub release marked "Latest" publishes to the npm latest tag.
+# A GitHub release marked "Pre-release" publishes to the npm beta tag.
+# The npm package must have this workflow registered as a trusted publisher.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build and test
+        run: npm test
+
+      - name: Check the tag matches package.json
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG" ]; then
+            echo "package.json version $PKG_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
+      - name: Publish beta
+        if: github.event.release.prerelease
+        run: npm publish --tag beta --provenance --access public
+
+      - name: Publish latest
+        if: ${{ !github.event.release.prerelease }}
+        run: npm publish --tag latest --provenance --access public

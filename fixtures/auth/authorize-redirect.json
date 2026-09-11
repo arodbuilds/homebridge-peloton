@@ -1,0 +1,12 @@
+{
+  "status": 302,
+  "headers": {
+    "location": "/login?state=redacted-login-state&client=WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM&protocol=oauth2",
+    "set-cookie": [
+      "auth0=redacted-session; Path=/; Expires=Fri, 11 Sep 2026 00:00:00 GMT; HttpOnly; Secure; SameSite=None",
+      "auth0_compat=redacted-session; Path=/; Expires=Fri, 11 Sep 2026 00:00:00 GMT; HttpOnly; Secure",
+      "did=redacted-device; Path=/; Expires=Sat, 11 Sep 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=None"
+    ]
+  },
+  "body": ""
+}

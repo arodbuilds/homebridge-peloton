@@ -2,13 +2,15 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": [
-      "DOM",
-      "ES2022"
+      "ES2022",
+      "DOM"
     ],
     "rootDir": "src",
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
     "declaration": true,
     "skipLibCheck": true,
     "outDir": "dist",
@@ -18,8 +20,6 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "eslint.config.js",
-    "homebridge-ui",
     "src"
   ]
 }

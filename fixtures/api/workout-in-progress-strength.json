@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": "w-str-0002",
+      "status": "IN_PROGRESS",
+      "fitness_discipline": "strength",
+      "device_type": "iOS",
+      "workout_type": "class",
+      "start_time": 1789040000,
+      "end_time": null,
+      "created_at": 1789039990,
+      "title": "20 min Full Body Strength",
+      "name": "Strength Workout",
+      "user_id": "u-member-0003",
+      "peloton_id": "redacted",
+      "ride": { "id": "redacted", "title": "20 min Full Body Strength", "duration": 1200 }
+    }
+  ],
+  "limit": 1,
+  "page": 0,
+  "total": 57
+}
