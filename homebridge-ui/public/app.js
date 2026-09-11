@@ -5,7 +5,7 @@
  * section 10); tokens never reach this page.
  */
 
-import { callServer, setSaveEnabled, toastError } from './api.js';
+import { callServer, fixScrollHeight, setSaveEnabled, toastError } from './api.js';
 import { DRAFT, FOOTER, PAGE, POLLING, RECONNECT_BANNER, SECTIONS, TRIGGERS, VALIDATION } from './copy.js';
 import { button, clear, el, focusField, linkButton } from './dom.js';
 import {
@@ -159,6 +159,11 @@ export class Page {
     this.revalidate();
   }
 
+  /** A section was rendered or the summary box changed: the host sizes the iframe to the new content. */
+  resized() {
+    fixScrollHeight();
+  }
+
   rerender(section, revalidate = true) {
     const container = this.containers.get(section);
     if (!container) {
@@ -171,6 +176,8 @@ export class Page {
     }
     if (revalidate) {
       this.revalidate();
+    } else {
+      this.resized();
     }
   }
 
@@ -454,6 +461,7 @@ export class Page {
     }
     this.issuesBox.hidden = all.length === 0 && !nothingToSave;
     setSaveEnabled(all.length === 0 && !nothingToSave);
+    this.resized();
   }
 
   hasValue(node) {
@@ -536,6 +544,7 @@ export class Page {
     const hide = () => {
       this.draftBanner.hidden = true;
       clear(this.draftBanner);
+      this.resized();
     };
     const restore = button(DRAFT.restore, () => {
       hide();

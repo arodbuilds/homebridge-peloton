@@ -14,6 +14,8 @@ const dom = installFakeDom();
 const requests = [];
 const answers = new Map();
 const pushed = [];
+/** How often the page asked the host to size the iframe to the content (fixScrollHeight). */
+const resizes = { count: 0 };
 dom.window.homebridge = {
   request: async (path, payload = {}) => {
     requests.push({ path, payload });
@@ -29,6 +31,9 @@ dom.window.homebridge = {
   toast: { error: () => undefined, success: () => undefined },
   enableSaveButton: () => undefined,
   disableSaveButton: () => undefined,
+  fixScrollHeight: () => {
+    resizes.count += 1;
+  },
 };
 
 // The page modules read window and document at call time; they are imported once the fake DOM is in place.
@@ -160,6 +165,28 @@ describe('ids over plain http', () => {
       assert.match(page.accountsUi.panel.accountId, UUID);
       assert.equal(root.querySelectorAll('.ns-standalone-panel').length, 1);
     });
+  });
+});
+
+describe('iframe height', () => {
+  it('asks the host to size the iframe after every render and after the summary box changes', () => {
+    resizes.count = 0;
+    const { page } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }], triggers: [{ id: 't1', type: 'workout', name: 'Workout' }] });
+    assert.ok(resizes.count >= 1, 'renderAll asks once the page is built');
+
+    resizes.count = 0;
+    page.rerender('triggers', false);
+    assert.equal(resizes.count, 1, 'a section render without revalidation asks once');
+
+    resizes.count = 0;
+    page.rerender('triggers');
+    assert.equal(resizes.count, 1, 'a section render with revalidation asks once, from revalidate');
+
+    resizes.count = 0;
+    page.config.triggers[0].name = '';
+    page.touched.add('triggers[0].name');
+    page.revalidate();
+    assert.equal(resizes.count, 1, 'the summary box appearing asks again');
   });
 });
 

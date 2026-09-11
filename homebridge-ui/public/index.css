@@ -4,8 +4,21 @@
    and spacing follow the design README: body 14.4px/300, labels 600, help 12.6px, h2 20px/300, controls
    38px with a 6px radius, 16px card padding, 24px between sections, 8px grid gap. */
 
+/* The Homebridge UI wraps this page in its own document inside a modal iframe and sizes the iframe to
+   document.body.scrollHeight (plus 10px) from the client's fixScrollHeight. Any margin that collapses
+   through the root and the body (the banner's 16px top margin) lands outside that measure but inside
+   the document, so the iframe ends up shorter than its document and wheel scrolling sticks at the
+   boundary. overflow hidden on html and body stops the collapse and leaves the iframe without a scroll
+   of its own; margin 0 keeps the measure equal to the content. */
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
 .peloton-ui {
   box-sizing: border-box;
+  display: flow-root;
   width: 100%;
   max-width: 100%;
   padding: 0 16px 16px;
