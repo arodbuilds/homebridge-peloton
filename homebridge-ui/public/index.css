@@ -1,0 +1,914 @@
+/* Layout for the Peloton settings page (design/README.md). Colours are host Bootstrap values named as the
+   design tokens, each with the host's light value as fallback, and re-declared for the host's dark-mode
+   marker, so the page follows the Homebridge UI theme and the plugin owns no palette. Type, control sizes
+   and spacing follow the design README: body 14.4px/300, labels 600, help 12.6px, h2 20px/300, controls
+   38px with a 6px radius, 16px card padding, 24px between sections, 8px grid gap. */
+
+.peloton-ui {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 16px 16px;
+  overflow-wrap: anywhere;
+  font-size: 14.4px;
+  font-weight: 300;
+  line-height: 1.5;
+  --ns-bg: #ffffff;
+  --ns-text: #212529;
+  --ns-secondary: rgba(33, 37, 41, 0.75);
+  --ns-border: #dee2e6;
+  --ns-cardborder: rgba(0, 0, 0, 0.176);
+  --ns-subtle: rgba(33, 37, 41, 0.03);
+  --ns-locked: #e9ecef;
+  --ns-link: #0d6efd;
+  --ns-primary: #607d8b;
+  --ns-danger: #dc3545;
+  --ns-success: #198754;
+  --ns-badge: #6c757d;
+  --ns-warnbg: #fff3cd;
+  --ns-warntext: #664d03;
+  --ns-warnborder: #ffecb5;
+}
+
+.peloton-ui *,
+.peloton-ui *::before,
+.peloton-ui *::after {
+  box-sizing: border-box;
+}
+
+/* The banners and strips set their own display, so the hidden attribute needs this to win. */
+.peloton-ui [hidden] {
+  display: none !important;
+}
+
+/* The Homebridge UI marks dark mode inside this iframe by adding dark-mode (and config-ui-x-dark-mode-{theme})
+   to the body; a host that sets data-bs-theme="dark" is covered too. Only the tokens change. */
+body.dark-mode .peloton-ui,
+body[class*="config-ui-x-dark-mode"] .peloton-ui,
+[data-bs-theme="dark"] .peloton-ui {
+  --ns-bg: #1c1c1c;
+  --ns-text: #ffffff;
+  --ns-secondary: rgba(222, 226, 230, 0.75);
+  --ns-border: #495057;
+  --ns-cardborder: rgba(255, 255, 255, 0.15);
+  --ns-subtle: #262626;
+  --ns-locked: #343a40;
+  --ns-link: #6ea8fe;
+  --ns-warnbg: #3a3524;
+  --ns-warntext: #ffe69c;
+  --ns-warnborder: #5c552f;
+  --bs-secondary-color: rgba(222, 226, 230, 0.75);
+  --bs-border-color: #495057;
+  --bs-border-color-translucent: rgba(255, 255, 255, 0.15);
+  --bs-secondary-bg: #343a40;
+  --bs-link-color: #6ea8fe;
+  --bs-link-hover-color: #8bb9fe;
+}
+
+/* Banner: 4:1, full width, 6px radius, 16px top margin. */
+.ns-banner {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 1;
+  margin-top: 16px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #6e2220;
+}
+
+/* Secondary text: field help, sublines, captions, the footer, disclosure summaries, the help toggle. */
+.peloton-ui .form-text,
+.peloton-ui .ns-secondary,
+.peloton-ui details > summary,
+.peloton-ui .ns-help-toggle,
+.peloton-ui .ns-footer {
+  color: var(--ns-secondary);
+  font-size: 12.6px;
+  font-weight: 300;
+  line-height: 1.4;
+}
+
+.peloton-ui .form-text {
+  margin-top: 4px;
+}
+
+.peloton-ui .ns-help-link,
+.peloton-ui .ns-footer a,
+.peloton-ui .ns-callout a {
+  color: var(--ns-link);
+}
+
+.ns-lead {
+  margin: 16px 0 8px;
+}
+
+.ns-lead + .ns-lead {
+  margin-top: 0;
+}
+
+.ns-lead-note {
+  margin: 0 0 8px;
+}
+
+/* Section anatomy: h2 20px weight 300 with a 1px rule, one intro sentence, cards, one Add button; 24px above. */
+.ns-section {
+  margin-top: 24px;
+}
+
+.ns-section h2 {
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  font-size: 20px;
+  font-weight: 300;
+  border-bottom: 1px solid var(--ns-border);
+}
+
+.ns-section-copy {
+  margin: 0 0 8px;
+}
+
+/* Banners: the unsaved-changes bar (host machinery), and the non-blocking reconnect banner in warning colours. */
+.ns-draft-banner,
+.ns-reconnect-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ns-border);
+  border-radius: 6px;
+  background: var(--ns-subtle);
+}
+
+.ns-draft-banner .ns-draft-message {
+  margin-right: auto;
+}
+
+.ns-reconnect-banner {
+  display: block;
+  border-color: var(--ns-warnborder);
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+}
+
+/* Blocking section error (Polling) under the intro. */
+.ns-section-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ns-danger);
+  border-radius: 6px;
+  color: var(--ns-danger);
+}
+
+/* 12-column grid, 8px gap, 16px between fields; every cell full width below 600px. */
+.ns-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 8px;
+  row-gap: 0;
+  width: 100%;
+}
+
+.ns-grid > * {
+  min-width: 0;
+  grid-column: span 12;
+}
+
+.ns-span-3 { grid-column: span 3; }
+.ns-span-6 { grid-column: span 6; }
+
+@media (max-width: 599.98px) {
+  .ns-grid > * {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Field anatomy: bold 14.4px label, 38px control at 16px, help at 12.6px. */
+.ns-field {
+  margin-bottom: 16px;
+}
+
+.peloton-ui .form-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.peloton-ui .form-control,
+.peloton-ui .form-select {
+  min-height: 38px;
+  font-size: 16px;
+  border-radius: 6px;
+}
+
+.peloton-ui .form-control::placeholder {
+  font-style: italic;
+  opacity: 1;
+}
+
+.peloton-ui .input-group > .form-control {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.peloton-ui .ns-reveal {
+  font-size: 13.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-color: var(--ns-border);
+  color: inherit;
+}
+
+.ns-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.ns-check .form-check-label {
+  font-size: 14.4px;
+}
+
+/* Validation: invalid is a red border with a 12.6px red message; valid required fields carry a small green check. */
+.ns-field.has-issue > .invalid-feedback {
+  display: block;
+  font-size: 12.6px;
+  color: var(--ns-danger);
+}
+
+.peloton-ui .form-control.is-invalid,
+.peloton-ui .form-select.is-invalid {
+  border-color: var(--ns-danger);
+  background-image: none;
+}
+
+.peloton-ui .form-control.ns-valid {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3e%3cpath fill='%23198754' d='M2.3 6.73L.6 4.53c-.4-1.04.46-1.4 1.1-.8l1.1 1.4 3.4-3.8c.6-.63 1.6-.27 1.2.7l-4 4.6c-.43.5-.8.4-1.1.1z'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 15px 15px;
+  padding-right: 34px;
+}
+
+/* Buttons. Primary: 38px, host primary fill, white uppercase 16px, 4px radius. Small: 31px, 13.5px uppercase. */
+.peloton-ui .ns-primary {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--ns-primary);
+  border-radius: 4px;
+  background: var(--ns-primary);
+  color: #fff;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.peloton-ui .ns-primary:hover,
+.peloton-ui .ns-primary:focus {
+  background: var(--ns-primary);
+  border-color: var(--ns-primary);
+  color: #fff;
+  filter: brightness(0.94);
+}
+
+.peloton-ui .ns-outline {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--ns-link);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ns-link);
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.peloton-ui .ns-outline:hover,
+.peloton-ui .ns-outline:focus {
+  background: rgba(128, 128, 128, 0.08);
+  border-color: var(--ns-link);
+  color: var(--ns-link);
+  box-shadow: none;
+}
+
+.peloton-ui .btn-sm.ns-small {
+  height: 31px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+}
+
+.peloton-ui .ns-link-button {
+  text-decoration: none;
+  vertical-align: baseline;
+  font-size: 14.4px;
+  color: var(--ns-link);
+  white-space: normal;
+}
+
+.peloton-ui .ns-link-button.text-danger {
+  color: var(--ns-danger) !important;
+}
+
+.peloton-ui .ns-link-button.ns-secondary {
+  color: var(--ns-secondary);
+}
+
+.ns-link-button:hover,
+.ns-link-button:focus {
+  text-decoration: underline;
+}
+
+.peloton-ui .btn:disabled,
+.peloton-ui .btn.disabled {
+  opacity: 0.65;
+}
+
+/* Cards: 1px card border, 6px radius, 16px below. */
+.ns-card {
+  border: 1px solid var(--ns-cardborder);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Trigger card header strip: name, type badge, outlined badges; Show help and Edit / Done at the right. */
+.ns-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--ns-subtle);
+}
+
+.ns-card-header .ns-card-title {
+  font-weight: 600;
+}
+
+.ns-card-header .ns-header-right {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.ns-card-header .ns-help-toggle,
+.ns-card-header .ns-collapse-toggle {
+  font-size: 12.6px;
+}
+
+.ns-card-body {
+  padding: 16px 16px 0;
+  border-top: 1px solid var(--ns-cardborder);
+}
+
+.ns-card-footer {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--ns-subtle);
+  border-top: 1px solid var(--ns-cardborder);
+}
+
+.ns-card-footer .ns-footer-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-right: auto;
+  min-width: 0;
+}
+
+.ns-warning-strip {
+  padding: 8px 16px;
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+  font-size: 12.6px;
+  border-top: 1px solid var(--ns-cardborder);
+}
+
+/* A card's Show help toggle hides field help only. */
+.ns-help-hidden .ns-help {
+  display: none;
+}
+
+/* Badges: 11.5px weight 600, 3px 7px padding, 4px radius. Filled type badge, outlined detail badges, warning badge. */
+.ns-badge {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ns-badge-filled {
+  background: var(--ns-badge);
+  color: #fff;
+}
+
+.ns-badge-outline {
+  padding: 2px 7px;
+  border: 1px solid var(--ns-border);
+  color: var(--ns-secondary);
+}
+
+.ns-badge-warning {
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+  border: 1px solid var(--ns-warnborder);
+}
+
+/* Account status pills. */
+.ns-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.ns-pill-connected { background: var(--ns-success); }
+.ns-pill-reconnect_needed { background: var(--ns-danger); }
+.ns-pill-not_connected { background: var(--ns-badge); }
+
+.ns-pill-checking {
+  border: 1px solid var(--ns-border);
+  color: var(--ns-secondary);
+  background: transparent;
+}
+
+@keyframes ns-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ns-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 5px;
+  animation: ns-spin 0.8s linear infinite;
+}
+
+/* Account card: avatar, name block, status column; wraps at phone width. */
+.ns-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.ns-avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ns-locked);
+  color: inherit;
+  font-size: 14.4px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.ns-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ns-account-main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ns-account-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ns-account-name .ns-name {
+  font-weight: 600;
+}
+
+.ns-account-subline {
+  margin-top: 4px;
+}
+
+.ns-account-meta {
+  margin-top: 2px;
+}
+
+.ns-account-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ns-account-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 16px;
+}
+
+.ns-account-result {
+  padding: 0 16px 12px;
+  font-size: 13.5px;
+}
+
+/* Below 600px the pill and links move under the name and wrap; the avatar stays. */
+@media (max-width: 599.98px) {
+  .ns-account-status {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    flex-basis: 100%;
+    padding-left: 52px;
+  }
+
+  .ns-account-links {
+    justify-content: flex-start;
+  }
+}
+
+/* Connect panel: inline under the card, subtle background, 1px top rule, 16px padding. */
+.ns-connect-panel {
+  padding: 16px;
+  border-top: 1px solid var(--ns-cardborder);
+  background: var(--ns-subtle);
+}
+
+.ns-connect-panel .ns-field:last-child {
+  margin-bottom: 0;
+}
+
+.ns-connect-panel p {
+  margin: 12px 0 0;
+}
+
+.ns-connect-panel p + p {
+  margin-top: 8px;
+}
+
+.ns-connect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.ns-result {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  border: 1px solid;
+}
+
+.ns-result-danger {
+  border-color: var(--ns-danger);
+  color: var(--ns-danger);
+}
+
+.ns-result-success {
+  border-color: var(--ns-success);
+  color: var(--ns-success);
+}
+
+.ns-standalone-panel {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--ns-cardborder);
+  border-radius: 6px;
+}
+
+.ns-first-run {
+  margin-bottom: 8px;
+}
+
+.ns-devices {
+  margin-top: 16px;
+}
+
+.ns-devices .ns-devices-suffix {
+  opacity: 0.75;
+}
+
+/* Activities chips: 31px tall, 16px radius; selected in the link colour, unselected outlined. */
+.ns-chips-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ns-chips-head .ns-chips-summary {
+  font-weight: 300;
+  color: var(--ns-secondary);
+}
+
+.ns-chips-links {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 12.6px;
+}
+
+.ns-chips-links .ns-link-button {
+  font-size: 12.6px;
+}
+
+.ns-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.peloton-ui .ns-chip {
+  height: 31px;
+  padding: 0 12px;
+  border: 1px solid var(--ns-border);
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  font-size: 13.5px;
+  line-height: 1;
+}
+
+.peloton-ui .ns-chip[aria-pressed="true"] {
+  border-color: var(--ns-link);
+  background: var(--ns-link);
+  color: #fff;
+}
+
+.ns-note {
+  margin-bottom: 16px;
+}
+
+/* Add trigger chooser: two tiles that fill the width, stacked below 600px. */
+.ns-chooser {
+  margin-top: 12px;
+}
+
+.ns-chooser-prompt {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.ns-chooser-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 599.98px) {
+  .ns-chooser-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.peloton-ui .ns-chooser-tile {
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--ns-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  min-width: 0;
+}
+
+.ns-chooser-tile .ns-tile-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ns-chooser-tile:hover,
+.ns-chooser-tile:focus-visible {
+  border-color: var(--ns-link);
+  box-shadow: 0 0 0 1px var(--ns-link);
+  outline: none;
+}
+
+.ns-chooser-cancel {
+  margin-top: 12px;
+}
+
+.ns-add-row {
+  margin-top: 8px;
+}
+
+.ns-empty-line {
+  margin: 0 0 8px;
+  color: var(--ns-secondary);
+}
+
+/* Polling callout: 1px border, 6px radius, subtle fill, dismiss at the right. */
+.ns-callout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--ns-border);
+  border-radius: 6px;
+  background: var(--ns-subtle);
+}
+
+.ns-callout .ns-callout-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ns-callout .ns-callout-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ns-callout a {
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.peloton-ui .ns-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ns-estimate {
+  margin: -8px 0 16px;
+}
+
+/* Settings > Advanced disclosure. */
+.ns-advanced {
+  margin-top: 4px;
+}
+
+.ns-advanced > summary {
+  cursor: pointer;
+}
+
+.ns-advanced > div {
+  margin-top: 8px;
+}
+
+.ns-restore-status:empty {
+  display: none;
+}
+
+.ns-restore-status .alert {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding: 8px 12px;
+}
+
+/* Sticky summary box in warning colours; the entries link to their fields. */
+.ns-issues {
+  position: sticky;
+  bottom: 8px;
+  z-index: 5;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ns-warnborder);
+  border-radius: 6px;
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ns-issues.ns-issues-quiet {
+  border-color: var(--ns-border);
+  background: var(--ns-subtle);
+  color: inherit;
+  box-shadow: none;
+}
+
+.ns-issues-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ns-issues-head .ns-issues-heading {
+  font-weight: 600;
+}
+
+.ns-issues ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.ns-issues li {
+  margin-bottom: 2px;
+}
+
+.peloton-ui .ns-issue-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.peloton-ui .ns-issues-toggle {
+  color: inherit;
+  font-size: 12.6px;
+}
+
+.ns-inline-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ns-confirm-question {
+  font-size: 12.6px;
+}
+
+.ns-closing {
+  margin: 24px 0 0;
+}
+
+/* Footer line: 20px glyph in currentColor, version, credit, links, above a 1px rule. */
+.ns-footer {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ns-border);
+  line-height: 1.5;
+}
+
+.ns-footer-item {
+  white-space: nowrap;
+}
+
+.ns-mark-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: bottom;
+}
+
+.ns-mark-label svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+/* Touch: every button at least 44px tall. */
+@media (pointer: coarse) {
+  .peloton-ui .btn:not(.ns-dismiss):not(.ns-chip) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+body.ns-touch .peloton-ui .btn:not(.ns-dismiss):not(.ns-chip) {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

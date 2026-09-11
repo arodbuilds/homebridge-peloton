@@ -148,6 +148,22 @@ Validate on blur; a field is marked only after it has been touched. Invalid: red
 - Switch off + standby 0: blocking Polling error above.
 - Summary box: sticky, warning colours, "Fix these before saving:" then "{Card name}: {message}" entries that focus the field. SAVE disabled while present. Past three entries collapse to "N fields need attention" with Show all.
 
+## Clarifications from build 3
+The page in `homebridge-ui/public/` follows this document; where the build needed a state or a line this document did not name, it is recorded here rather than invented twice.
+- Device (Triggers): see the Device field above; the choice is the hardware family (SPEC 8.3), so the caption changed with it.
+- Heart-rate zone card with no member chosen (a household with nobody connected yet): blocking error on Who, "Choose the member whose heart rate this sensor follows." A new card preselects the first connected member.
+- Live estimate: the requests per hour count every account that would be polled, so it reads "About 60 requests per hour in standby with 2 accounts." at 120 s standby, not the per-account figure.
+- Reconnect banner: shown on load whenever an account is in Reconnect needed (the page cannot see the host's save), pluralised as "2 accounts need to be reconnected. Everything else is saved."
+- A new trigger card holds its errors back until a field in it is touched (the notify-switch behaviour). While it does, the summary box reads "Finish the new trigger before saving." in the quiet tone and Save stays disabled.
+- Test on a Connected card: success updates the "Last checked" subline; failure shows the stage message under the card. A Peloton API or network failure on any action reads "Peloton did not answer (HTTP {status}). Try again in a moment." (without the parenthesis when there was no status), the stage "refresh" reads "Sign-in expired. Reconnect to resume polling." and the card flips to Reconnect needed.
+- Connect panel guards before anything is sent: "Enter the email address of the Peloton account.", "Enter the password of the Peloton account.", "Paste the address from your browser first.", and "Click Open Peloton sign-in first, then paste the address it leads to."
+- Restore from backup accepts a Peloton platform block, a whole config.json, or a saved draft. Failures: "The backup could not be loaded:" with "The file is not valid JSON.", "The file does not hold a Peloton platform block." or "The file is larger than 1 MB, which a Peloton backup never is."; success toasts "Backup loaded. Review the page, then click Save."
+- Trigger cards loaded from config start collapsed (header only); a card added or duplicated on this visit starts expanded.
+- The Devices line is omitted while the membership reports no devices.
+- Additional field messages mirroring config.schema.json: "Enter a number of seconds, 0 or more." on the hold fields, "Enter a number of minutes, 1 or more." under Advanced, "Enter a time as HH:MM." on the check-in time, and "Name is required." on the plugin name.
+- Where the page cannot reach the plugin's UI server, actions show "The plugin server did not answer. Reload the page and try again." and the version and account states are left out.
+- The unsaved draft in localStorage never holds passwords; restoring it keeps the stored passwords of the accounts it names.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 

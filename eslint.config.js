@@ -43,6 +43,23 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // The settings page runs in the browser: plain ES modules the Homebridge UI serves from homebridge-ui/public.
+    files: ['homebridge-ui/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        localStorage: 'readonly',
+        crypto: 'readonly',
+        HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        Event: 'readonly',
+        CSS: 'readonly',
+      },
+    },
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
 );
