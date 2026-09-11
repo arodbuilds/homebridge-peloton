@@ -8,7 +8,10 @@
 import { callServer, setSaveEnabled, toastError } from './api.js';
 import { DRAFT, FOOTER, PAGE, POLLING, RECONNECT_BANNER, SECTIONS, TRIGGERS, VALIDATION } from './copy.js';
 import { button, clear, el, focusField, linkButton } from './dom.js';
-import { clearDraft, exportConfig, exportConfigWithoutPasswords, isFreshConfig, readConfig, readDraft, saveDraft, stableStringify, validate } from './model.js';
+import {
+  clearDraft, exportConfig, exportConfigWithoutPasswords, isFreshConfig, mergeConnectedAccount, readConfig, readDraft, removeAccountEntry, saveDraft,
+  stableStringify, validate,
+} from './model.js';
 import { renderAccounts } from './accounts.js';
 import { renderPolling } from './polling.js';
 import { renderSettings } from './settings.js';
@@ -254,23 +257,7 @@ class Page {
    */
   async applyConnected(panel, summary, entered) {
     const id = panel.accountId;
-    let account = this.config.accounts.find((entry) => entry.id === id);
-    if (!account) {
-      account = { id, email: '', displayName: '', userId: '', storedPassword: undefined, newPassword: undefined };
-      this.config.accounts.push(account);
-    }
-    if (entered.email) {
-      account.email = entered.email;
-    }
-    if (entered.password) {
-      account.newPassword = entered.password;
-    }
-    if (summary.userId) {
-      account.userId = summary.userId;
-    }
-    if (!account.displayName && summary.displayName) {
-      account.displayName = summary.displayName;
-    }
+    mergeConnectedAccount(this.config, id, summary, entered);
     if (this.status) {
       this.status.accounts = this.status.accounts.filter((entry) => entry.id !== id && !(entry.id === summary.userId && entry.state === 'not_connected'));
       this.status.accounts.push(summary);
@@ -288,10 +275,7 @@ class Page {
   /** Remove on an account card: the store file goes through /remove and the config entry is dropped. */
   async removeAccount(view) {
     await callServer('/remove', { id: view.key });
-    const at = this.config.accounts.findIndex((entry) => entry.id === view.key);
-    if (at >= 0) {
-      this.config.accounts.splice(at, 1);
-    }
+    removeAccountEntry(this.config, view.key);
     if (this.status) {
       this.status.accounts = this.status.accounts.filter((entry) => entry.id !== view.key);
     }
@@ -538,8 +522,9 @@ class Page {
     }
     this.pushTimer = window.setTimeout(() => {
       this.pushTimer = undefined;
-      const block = exportConfig(this.config);
-      saveDraft(exportConfigWithoutPasswords(this.config));
+      const summaries = this.status?.accounts ?? [];
+      const block = exportConfig(this.config, summaries);
+      saveDraft(exportConfigWithoutPasswords(this.config, summaries));
       window.homebridge.updatePluginConfig([block, ...this.otherBlocks]).catch((error) => {
         toastError(`Could not update the configuration: ${error instanceof Error ? error.message : String(error)}`);
       });

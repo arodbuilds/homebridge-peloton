@@ -137,23 +137,63 @@ function whole(value, fallback) {
 }
 
 /**
- * The platform block to write. Each account entry carries id, email, displayName, userId when known,
- * and the password the user entered on this page, else the stored one unchanged; a stored password
- * is never shown in the form.
+ * Account write-back (SPEC section 10). Each account entry carries id, email, displayName, and userId,
+ * the last two filled from the store's summary of the account when config does not have them yet,
+ * so an account the plugin signed in at startup gets its userId on the next save. The password is
+ * the one the user entered on this page; when none was entered the stored one is written back
+ * unchanged, never shown in the form. An account connected through the browser path has none.
  */
-export function exportAccount(account) {
+export function exportAccount(account, summary) {
   const out = { id: account.id, email: account.email.trim() };
-  if (account.displayName.trim().length > 0) {
-    out.displayName = account.displayName.trim();
+  const displayName = account.displayName.trim() || (summary?.displayName ?? '').trim();
+  if (displayName.length > 0) {
+    out.displayName = displayName;
   }
-  if (account.userId.length > 0) {
-    out.userId = account.userId;
+  const userId = account.userId || summary?.userId || '';
+  if (userId.length > 0) {
+    out.userId = userId;
   }
   const password = account.newPassword ?? account.storedPassword;
   if (password !== undefined && password.length > 0) {
     out.password = password;
   }
   return out;
+}
+
+/**
+ * A connect finished on the server for the config account id: the entry is created when new and
+ * updated with the email the user typed, the password when one was entered, and the profile's userId
+ * and display name (the display name only while config has none). Returns the entry.
+ */
+export function mergeConnectedAccount(config, id, summary, entered = {}) {
+  let account = config.accounts.find((entry) => entry.id === id);
+  if (!account) {
+    account = { id, email: '', displayName: '', userId: '', storedPassword: undefined, newPassword: undefined };
+    config.accounts.push(account);
+  }
+  if (typeof entered.email === 'string' && entered.email.trim().length > 0) {
+    account.email = entered.email.trim();
+  }
+  if (typeof entered.password === 'string' && entered.password.length > 0) {
+    account.newPassword = entered.password;
+  }
+  if (summary?.userId) {
+    account.userId = summary.userId;
+  }
+  if (!account.displayName && summary?.displayName) {
+    account.displayName = summary.displayName;
+  }
+  return account;
+}
+
+/** Remove on an account card: drops the config entry with that id (the store file goes through /remove). Returns true when one was dropped. */
+export function removeAccountEntry(config, id) {
+  const at = config.accounts.findIndex((entry) => entry.id === id);
+  if (at < 0) {
+    return false;
+  }
+  config.accounts.splice(at, 1);
+  return true;
 }
 
 export function exportTrigger(trigger) {
@@ -169,11 +209,11 @@ export function exportTrigger(trigger) {
   };
 }
 
-export function exportConfig(config) {
+export function exportConfig(config, summaries = []) {
   return {
     platform: PLATFORM,
     name: config.name.trim() || DEFAULTS.name,
-    accounts: config.accounts.map(exportAccount),
+    accounts: config.accounts.map((account) => exportAccount(account, summaries.find((summary) => summary.id === account.id))),
     triggers: config.triggers.map(exportTrigger),
     polling: {
       fastSwitch: config.polling.fastSwitch,
@@ -192,8 +232,8 @@ export function exportConfig(config) {
 }
 
 /** The block without passwords, for the draft in localStorage and for comparing two configurations. */
-export function exportConfigWithoutPasswords(config) {
-  const block = exportConfig(config);
+export function exportConfigWithoutPasswords(config, summaries = []) {
+  const block = exportConfig(config, summaries);
   block.accounts = block.accounts.map((account) => {
     const copy = { ...account };
     delete copy.password;
