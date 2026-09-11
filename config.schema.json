@@ -229,6 +229,7 @@
       },
       "advanced": {
         "title": "Advanced",
+        "description": "Rarely needed options: the auto-off period, the Attention needed sensor, and the daily check-in time.",
         "type": "object",
         "default": {},
         "properties": {
