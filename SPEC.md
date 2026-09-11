@@ -307,4 +307,6 @@ Findings from the second Pi probe run (11 September 2026). Each is a clarificati
 - 8.2: third-party fitness feed imports are ignored for detection, and the locked state polls GET /api/workout/{id} instead of the list until the workout completes.
 - 8.3: device matching no longer waits on a device id field; it maps device_type to attached_devices. The zone fallback records that lower bounds round down.
 - 13: fixtures/auth gains the six redirect hops after the callback POST, with the cookie names and query parameter names per hop and sanitised values; callback-redirect.json stays as the single-hop shape. fixtures/api gains a single-workout body for GET /api/workout/{id} and a third-party import at the top of the list, and performance-graph-heart-rate.json carries the confirmed zone bounds.
+- 10 and design/README.md: the account card's "Last workout" line is derived from the latest Peloton-originated workout in the workouts list, not from the profile's last_workout_at; the design README carries the clarification.
+- 13: the probe gains a `graph <workoutId>` command that prints metric slugs, sample counts, and heart-rate zone bounds, for checking zones on non-cycling workouts by id.
 - 15: items 1, 3, and 8 are resolved above. Item 4 (start latency) stays open for the ride test.

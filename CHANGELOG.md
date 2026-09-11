@@ -17,6 +17,7 @@ Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 - Test suites for auth, api, and store with a fake fetch that replays fixtures in sequence and records requests.
 - Standalone auth probe for the Pi (`dist/scripts/auth-probe.mjs`) with login, refresh, browser, me, and workout commands.
 - `getWorkout(workoutId)` in the API wrappers for GET /api/workout/{id}, and the workout type now carries `isPelotonOriginatedWorkout`, `is3pFitFeedWorkout`, `platform`, `pelotonId`, and `ride` (id, title, duration, instructor id when present). Fixtures for the single-workout call and for a run synced from a third-party fitness feed, which detection ignores.
+- Probe `graph <workoutId>` command that prints the metric slugs, sample counts, and heart-rate zone bounds of one workout's performance graph.
 - CLAUDE.md with the working rules, README first pass, and this changelog.
 
 ### Changed
