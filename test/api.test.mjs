@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { ApiError, PELOTON_API_BASE, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { createFakeFetch } from './helpers/fake-fetch.mjs';
-import { apiResponse, htmlResponse, jsonResponse } from './helpers/fixtures.mjs';
+import { apiFixture, apiResponse, htmlResponse, jsonResponse } from './helpers/fixtures.mjs';
 
 const TOKEN = 'redacted';
 
@@ -119,6 +119,24 @@ describe('getSubscriptions', () => {
     const fetchImpl = createFakeFetch([jsonResponse(200, { data: [] })]);
     await getSubscriptions('a/b', TOKEN, fetchImpl);
     assert.equal(fetchImpl.requests[0].url, `${PELOTON_API_BASE}/api/user/a%2Fb/subscriptions`);
+  });
+
+  it('keeps a device whose id is numeric or missing, reads numeric user ids as strings, and drops an entry with neither id nor name', async () => {
+    const body = apiFixture('subscriptions');
+    body.data[0].owner.id = 777;
+    body.data[0].shared_user_set[0].id = 42;
+    body.data[0].attached_devices = [
+      { id: 12345, name: 'Blue Door+', device_type: 'home_bike_plus' },
+      { name: 'Tread', device_type: 'prism' },
+      { device_type: 'ghost' },
+    ];
+    const [active] = await getSubscriptions('777', TOKEN, createFakeFetch([jsonResponse(200, body)]));
+    assert.equal(active.ownerId, '777');
+    assert.equal(active.sharedUsers[0].id, '42');
+    assert.deepEqual(active.attachedDevices, [
+      { id: '12345', name: 'Blue Door+', deviceType: 'home_bike_plus' },
+      { id: '', name: 'Tread', deviceType: 'prism' },
+    ]);
   });
 });
 

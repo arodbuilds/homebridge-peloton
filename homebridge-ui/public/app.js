@@ -12,7 +12,7 @@ import {
   clearDraft, exportConfig, exportConfigWithoutPasswords, isFreshConfig, mergeConnectedAccount, readConfig, readDraft, removeAccountEntry, saveDraft,
   stableStringify, validate,
 } from './model.js';
-import { renderAccounts } from './accounts.js';
+import { avatarSrc, renderAccounts } from './accounts.js';
 import { renderPolling } from './polling.js';
 import { renderSettings } from './settings.js';
 import { renderTriggers } from './triggers.js';
@@ -85,7 +85,8 @@ function isTouchDevice() {
   }
 }
 
-class Page {
+/** The page. Exported for the node:test suite that renders it on a fake DOM; the Homebridge UI only ever runs start(). */
+export class Page {
   constructor(root, config, status, pendingDraft) {
     this.root = root;
     this.config = config;
@@ -242,7 +243,7 @@ class Page {
       return cache.get(id);
     }
     const pending = callServer('/avatar', { id }).then((result) => {
-      const src = result.ok && result.status === 200 && typeof result.data === 'string' ? `data:${result.contentType};base64,${result.data}` : null;
+      const src = avatarSrc(result);
       cache.set(id, src);
       return src;
     });

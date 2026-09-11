@@ -834,6 +834,24 @@ describe('daily check-in', () => {
     assert.equal(h.lines.debug.filter((line) => line === 'Owner: daily check-in failed (HTTP 503)').length, 1);
   });
 
+  it('brings a stale household profile up to date and re-stores the owner devices at check-in', async () => {
+    const h = await harness({ config: { polling: { standbyInterval: 0 } }, accounts: [OWNER] });
+    await h.store.save('u-member-0002', {
+      userId: 'u-member-0002', username: 'member_runner', displayName: 'member_runner', imageUrl: 'https://cdn.example.invalid/avatars/old.png',
+      isProfileImageDefault: false, state: 'not_connected',
+    });
+    h.fetch.route('/api/me', apiResponse('me-owner')).route('/subscriptions', apiResponse('subscriptions'));
+    h.poller.start();
+    await h.poller.checkInNow();
+    const profile = await h.store.load('u-member-0002');
+    assert.equal(profile.displayName, 'Member Example');
+    assert.equal(profile.imageUrl, 'https://cdn.example.invalid/avatars/default.png');
+    assert.equal(profile.isProfileImageDefault, true);
+    assert.equal(profile.state, 'not_connected');
+    assert.deepEqual(readRecord(h.store, 'a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, h.clock.now());
+  });
+
   it('uses the profile zones learned at check-in for later heart-rate samples', async () => {
     const h = await harness({ accounts: [MEMBER], config: { triggers: [workoutTrigger(), hrTrigger({ who: MEMBER.userId })] } });
     h.fetch.route('/api/me', apiResponse('me-member')).route('/subscriptions', apiResponse('subscriptions'));
@@ -848,6 +866,35 @@ describe('daily check-in', () => {
     await h.clock.advance(10_000);
     // 152 bpm on the member's 190 max: zone 4 starts at 161, so this is zone 3.
     assert.equal(h.named('sampleReceived').at(-1).zone, 3);
+  });
+});
+
+describe('last checked', () => {
+  it('persists lastCheckedAt on every successful poll of the account, list and locked alike, and leaves it on a failure', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, [
+      apiResponse('workouts-empty'), apiResponse('workouts-empty'), jsonResponse(503, {}), apiResponse('workout-in-progress-cycling'),
+    ]).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, undefined);
+    h.poller.start();
+    await h.clock.advance(0);
+    const first = h.clock.now();
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first);
+    await h.clock.advance(120_000);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 120_000);
+    await h.clock.advance(120_000);
+    assert.equal(h.fetch.count(LIST_OWNER), 3);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 120_000, 'a failed poll leaves the last successful time');
+    await h.clock.advance(120_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 360_000);
+    await h.clock.advance(10_000);
+    assert.equal(h.fetch.count(WORKOUT_CYC), 1);
+    assert.equal(readRecord(h.store, 'a1').lastCheckedAt, first + 370_000, 'the locked poll through getWorkout counts too');
+    const record = readRecord(h.store, 'a1');
+    assert.equal(record.refreshToken, 'refresh-1', 'the write keeps the rest of the record');
+    assert.equal(record.state, 'connected');
+    assert.deepEqual(h.lines.warn, []);
   });
 });
 

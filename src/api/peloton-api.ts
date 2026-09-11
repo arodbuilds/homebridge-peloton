@@ -63,6 +63,7 @@ export interface SharedUser {
 }
 
 export interface AttachedDevice {
+  /** Empty when the entry carries no id; the connect flow then keys the device by its name. */
   id: string;
   name: string;
   /** Hardware model code when the entry carries device_type; the device map (SPEC section 8.3) is learned from it. */
@@ -147,7 +148,7 @@ type Json = Record<string, unknown>;
 export async function getMe(accessToken: string, fetchImpl: FetchImpl = fetch): Promise<Me> {
   const json = await getJson('/api/me', accessToken, fetchImpl);
   return {
-    id: str(json.id),
+    id: idStr(json.id),
     username: str(json.username),
     firstName: str(json.first_name),
     lastName: str(json.last_name),
@@ -179,12 +180,12 @@ export async function getSubscriptions(userId: string, accessToken: string, fetc
     return {
       id: str(record.id),
       status: str(record.status),
-      ownerId: str(obj(record.owner).id),
+      ownerId: idStr(obj(record.owner).id),
       maxSharedUsers: num(record.max_shared_users) ?? 0,
       sharedUsers: arr(record.shared_user_set).map((user) => {
         const shared = obj(user);
         return {
-          id: str(shared.id),
+          id: idStr(shared.id),
           username: str(shared.username),
           firstName: str(shared.first_name),
           lastName: str(shared.last_name),
@@ -193,14 +194,16 @@ export async function getSubscriptions(userId: string, accessToken: string, fetc
           lastWorkoutAt: num(shared.last_workout_at),
         };
       }),
+      // An entry with neither an id nor a name is nothing the settings page could show; the rest are
+      // kept, a numeric id as its decimal string, so no device on the membership is dropped here.
       attachedDevices: arr(record.attached_devices).map((device) => {
         const attached = obj(device);
-        const result: AttachedDevice = { id: str(attached.id), name: str(attached.name) };
+        const result: AttachedDevice = { id: idStr(attached.id), name: str(attached.name) };
         if (typeof attached.device_type === 'string' && attached.device_type.length > 0) {
           result.deviceType = attached.device_type;
         }
         return result;
-      }),
+      }).filter((device) => device.id.length > 0 || device.name.length > 0),
     };
   });
 }
@@ -322,6 +325,14 @@ function arr(value: unknown): unknown[] {
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** An identifier: a string as is, a finite number as its decimal string, anything else empty. */
+function idStr(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return str(value);
 }
 
 function num(value: unknown): number | null {

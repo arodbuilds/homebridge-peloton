@@ -39,6 +39,13 @@ export function accountViews(app) {
   return views;
 }
 
+/** The img src for an /avatar answer: a data URL for a photo, null for the default image or a failure (initials stay). */
+export function avatarSrc(result) {
+  return result.ok === true && result.status === 200 && typeof result.data === 'string' && typeof result.contentType === 'string'
+    ? `data:${result.contentType};base64,${result.data}`
+    : null;
+}
+
 function makeView(key, account, summary) {
   return {
     key,

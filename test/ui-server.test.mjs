@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getMe, getSubscriptions } from '../dist/api/peloton-api.js';
 import { AuthError, PELOTON_AUTH, browserFinish, browserStart } from '../dist/auth/peloton-auth.js';
-import { AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse } from '../dist/ui/handlers.js';
+import { AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse, imageTypeOf } from '../dist/ui/handlers.js';
 import { createFakeStore } from './helpers/fake-store.mjs';
 import { apiResponse, authFixture, jsonResponse } from './helpers/fixtures.mjs';
 import { createRoutedFetch } from './helpers/routed-fetch.mjs';
@@ -152,6 +152,12 @@ describe('/status', () => {
     assert.equal((await routes['/status']()).accounts.find((a) => a.id === 'a1').lastWorkoutAt, 1789030990 * 1000);
   });
 
+  it('lists every device on the owner record, counting a device without an id by its name', async () => {
+    const devices = [{ id: '', name: 'Blue Door+', deviceType: 'home_bike_plus' }, { id: '', name: 'Tread', deviceType: 'prism' }, { id: 'x', name: '' }];
+    const { routes } = harness({ records: { a1: connected({ devices }) } });
+    assert.deepEqual((await routes['/status']()).devices, [{ id: '', name: 'Blue Door+' }, { id: '', name: 'Tread' }]);
+  });
+
   it('reflects a session that died while asking for the last workout', async () => {
     const { routes, fetch } = harness();
     fetch.route('/api/user/u-owner-0001/workouts', jsonResponse(401, {}));
@@ -181,6 +187,21 @@ describe('/connect', () => {
     assert.equal(JSON.stringify(record).includes('member@example.com'), false);
     assert.equal(store.records.has('u-member-0002'), false, 'the household profile for the same member is removed');
     assert.deepEqual(store.calls.remove, ['u-member-0002']);
+  });
+
+  it('stores the owner\'s devices and named household profiles at connect, and /status lists them', async () => {
+    const { routes, store, fetch } = harness({ records: {}, login: fakeLogin({ 'owner@example.com': TOKENS }) });
+    fetch.route('/api/me', apiResponse('me-owner'));
+    const result = await routes['/connect']({ id: 'a1', email: 'owner@example.com', password: 'secret' });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.account.isOwner, true);
+    assert.equal(result.account.displayName, 'Owner Example');
+    assert.deepEqual(store.records.get('a1').devices, [{ id: 'dev-bike-0001', name: 'Bike+', deviceType: 'home_bike_plus' }]);
+    const status = await routes['/status']();
+    assert.deepEqual(status.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0002').displayName, 'Member Example');
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').displayName, 'Lifter Example');
+    assert.equal(status.accounts.find((account) => account.id === 'u-member-0003').avatar, true);
   });
 
   it('maps every login stage to the page error shape with the HTTP status', async () => {
@@ -290,6 +311,14 @@ describe('/test', () => {
     assert.equal(fetch.calls('/api/me')[0].headers.authorization, 'Bearer access-1');
     assert.equal(store.records.get('a1').lastCheckedAt, NOW);
     assert.equal(store.records.get('a1').maxHr, 168);
+    assert.equal(store.records.get('a1').displayName, 'Owner', 'a display name of its own is kept');
+  });
+
+  it('replaces a display name that is only the username with the profile\'s name', async () => {
+    const { routes, store, fetch } = harness({ records: { a1: connected({ displayName: 'owner_rider' }) } });
+    fetch.route('/api/me', apiResponse('me-owner'));
+    assert.equal((await routes['/test']({ id: 'a1' })).ok, true);
+    assert.equal(store.records.get('a1').displayName, 'Owner Example');
   });
 
   it('reports a dead session as stage refresh and an account without tokens too', async () => {
@@ -317,6 +346,22 @@ describe('/household', () => {
     assert.deepEqual(result.accounts.map((account) => account.id).sort(), ['a1', 'u-member-0002', 'u-member-0003']);
     assert.deepEqual(result.devices, [{ id: 'dev-bike-0001', name: 'Bike+' }]);
     assert.equal(result.accounts.find((account) => account.id === 'u-member-0003').state, 'not_connected');
+  });
+
+  it('brings a stored household profile up to date with the member\'s name and photo, and leaves a connected member\'s own record alone', async () => {
+    const stale = { ...PROFILE, username: 'old_name', displayName: 'old_name', imageUrl: 'https://cdn.example.invalid/avatars/old.png' };
+    const lifter = connected({ userId: 'u-member-0003', username: 'member_lifter', displayName: 'Custom Lifter', isOwner: false, devices: undefined });
+    const { routes, store } = harness({ records: { a1: connected(), 'u-member-0002': stale, a2: lifter } });
+    const result = await routes['/household']();
+    assert.equal(result.ok, true);
+    const profile = store.records.get('u-member-0002');
+    assert.equal(profile.username, 'member_runner');
+    assert.equal(profile.displayName, 'Member Example');
+    assert.equal(profile.imageUrl, 'https://cdn.example.invalid/avatars/default.png');
+    assert.equal(profile.state, 'not_connected');
+    assert.equal(store.records.get('a2').displayName, 'Custom Lifter');
+    assert.equal(store.records.has('u-member-0003'), false, 'no profile is written beside a member\'s own record');
+    assert.equal(result.accounts.find((account) => account.id === 'u-member-0002').displayName, 'Member Example');
   });
 
   it('skips members and reports the owner failure by stage', async () => {
@@ -359,6 +404,32 @@ describe('/avatar', () => {
     clock.advance(1);
     await routes['/avatar']({ id: 'a1' });
     assert.equal(fetch.count(AVATAR_URL), 2);
+  });
+
+  it('reads the image type from the bytes when the CDN does not say image/*, as S3 answers for an object stored without one', async () => {
+    const { routes, fetch, clock } = harness();
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), Buffer.from('JFIF')]);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+    fetch.route(AVATAR_URL, [
+      { status: 200, headers: { 'content-type': 'binary/octet-stream' }, body: jpeg },
+      { status: 200, headers: {}, body: png },
+      { status: 200, headers: { 'content-type': 'application/octet-stream' }, body: Buffer.from('<html>') },
+    ]);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: true, status: 200, contentType: 'image/jpeg', data: jpeg.toString('base64') });
+    clock.advance(AVATAR_CACHE_TTL_MS);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: true, status: 200, contentType: 'image/png', data: png.toString('base64') });
+    clock.advance(AVATAR_CACHE_TTL_MS);
+    assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: false, stage: 'api', status: 200 });
+  });
+
+  it('knows JPEG, PNG, GIF, and WebP from their first bytes and nothing else', () => {
+    assert.equal(imageTypeOf(Buffer.from([0xff, 0xd8, 0xff, 0xdb])), 'image/jpeg');
+    assert.equal(imageTypeOf(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'image/png');
+    assert.equal(imageTypeOf(Buffer.from('GIF89a......')), 'image/gif');
+    assert.equal(imageTypeOf(Buffer.from('RIFF    WEBPVP8 ')), 'image/webp');
+    assert.equal(imageTypeOf(Buffer.from('RIFF    WAVE')), undefined);
+    assert.equal(imageTypeOf(Buffer.from('<html>')), undefined);
+    assert.equal(imageTypeOf(Buffer.alloc(0)), undefined);
   });
 
   it('reports a CDN failure or a non-image answer as stage api', async () => {

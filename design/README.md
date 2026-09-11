@@ -164,6 +164,15 @@ The page in `homebridge-ui/public/` follows this document; where the build neede
 - Where the page cannot reach the plugin's UI server, actions show "The plugin server did not answer. Reload the page and try again." and the version and account states are left out.
 - The unsaved draft in localStorage never holds passwords; restoring it keeps the stored passwords of the accounts it names.
 
+## Clarifications from the build 3 Chrome pass
+The first pass through the page in Chrome on the Pi (Homebridge UI 5.29 over plain http) settled these.
+- Activities: a Workout trigger whose config has no activities list (SPEC 6: absent or empty means all) renders with every chip selected and the summary "All activities". Select all / none keep their meaning, and an all-selected set is saved as an empty list.
+- Last checked: the Connected subline follows every successful poll of the account (SPEC 7 and 8.2), not only sign-in, refresh, and check-in.
+- Household cards: the name is "first_name last_name" from the membership when Peloton sends one, the username otherwise, and it is refreshed on every subscriptions read (SPEC 7).
+- Devices line: every device on the owner's membership is listed by name; a device Peloton sends without a name is listed by its hardware family (Bike, Bike+, Tread).
+- Avatars: a photo renders whatever content type Peloton's CDN sends, as long as the bytes are a JPEG, PNG, GIF, or WebP (SPEC 10).
+- Ids: new accounts and triggers get an id on plain http too, where crypto.randomUUID does not exist (SPEC 6).
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 
