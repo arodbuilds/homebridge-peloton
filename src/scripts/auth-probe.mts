@@ -7,6 +7,7 @@
  *   node dist/scripts/auth-probe.mjs browser                          prints the URL, waits for the pasted callback URL
  *   node dist/scripts/auth-probe.mjs me
  *   node dist/scripts/auth-probe.mjs workout [--keys]                 --keys also prints the raw field names of the workout
+ *   node dist/scripts/auth-probe.mjs graph <workoutId>                 prints metric slugs, sample counts, and heart-rate zone bounds
  *
  * Tokens live in ./probe-tokens.json with mode 0600. Nothing here prints a token.
  * On failure the probe prints the stage and HTTP status only.
@@ -61,6 +62,7 @@ function usage(): never {
     '  node dist/scripts/auth-probe.mjs browser',
     '  node dist/scripts/auth-probe.mjs me',
     '  node dist/scripts/auth-probe.mjs workout [--keys]',
+    '  node dist/scripts/auth-probe.mjs graph <workoutId>',
   ].join('\n'));
   process.exit(2);
 }
@@ -257,7 +259,8 @@ async function commandMe(): Promise<void> {
     }
     console.log(`Max heart rate: default ${me.defaultMaxHeartRate ?? 'none'}, customised ${me.customizedMaxHeartRate ?? 'none'}`);
     console.log(`Paired devices: ${me.pairedDevices.length}`);
-    console.log(`Last workout at: ${me.lastWorkoutAt === null ? 'never' : new Date(me.lastWorkoutAt * 1000).toISOString()}`);
+    const lastWorkoutAt = me.lastWorkoutAt === null ? 'none' : new Date(me.lastWorkoutAt * 1000).toISOString();
+    console.log(`last_workout_at on /api/me (stale, not used by the plugin): ${lastWorkoutAt}`);
   });
 }
 
@@ -276,8 +279,13 @@ async function commandWorkout(args: Args): Promise<void> {
     console.log(`Workout type: ${workout.workoutType}`);
     console.log(`Title: ${workout.title}`);
     console.log(`Name: ${workout.name}`);
-    console.log(`Device id field: ${workout.deviceId ?? 'absent'}`);
+    console.log(`Platform: ${workout.platform}`);
+    console.log(`Peloton originated: ${workout.isPelotonOriginatedWorkout}, third-party fit feed import: ${workout.is3pFitFeedWorkout}`);
+    if (workout.ride !== null) {
+      console.log(`Ride: ${workout.ride.title} (${workout.ride.duration ?? 'unknown'} s, instructor ${workout.ride.instructorId ?? 'none'})`);
+    }
     console.log(`Start: ${formatEpoch(workout.startTime)}, end: ${formatEpoch(workout.endTime)}, created: ${formatEpoch(workout.createdAt)}`);
+    console.log('Last workout at (from created_at): ' + formatEpoch(workout.createdAt));
     if (args.keys) {
       const keys = await rawWorkoutKeys(userId, accessToken);
       console.log(`Raw workout fields (names only): ${keys.join(', ')}`);
@@ -298,7 +306,62 @@ async function commandWorkout(args: Args): Promise<void> {
   });
 }
 
-/** Fetches the latest workout again and returns only the top-level field names, to settle SPEC open item 1. */
+/**
+ * Prints what the performance graph of one workout carries: every metric slug with its sample
+ * count, the heart-rate zone bounds, and the latest heart-rate sample. Settles SPEC items 3 and 8
+ * for any workout type by id. Nothing here prints a token.
+ */
+async function commandGraph(args: Args): Promise<void> {
+  const workoutId = args.positional[0];
+  if (workoutId === undefined) {
+    usage();
+  }
+  await withToken(async (accessToken) => {
+    const metrics = await rawMetricSummary(workoutId, accessToken);
+    console.log(`Metrics: ${metrics.length}`);
+    for (const metric of metrics) {
+      console.log(`  ${metric.slug}: ${metric.samples} samples${metric.zones === null ? '' : `, ${metric.zones} zone bounds`}`);
+    }
+    const graph = await getPerformanceGraph(workoutId, 5, accessToken);
+    console.log(`Sample offsets: ${graph.secondsSincePedalingStart.length}, latest at ${graph.secondsSincePedalingStart.at(-1) ?? 'none'} s`);
+    if (graph.heartRate === null) {
+      console.log('Heart rate metric: absent');
+      return;
+    }
+    console.log(`Heart rate: latest ${graph.heartRate.latestSample ?? 'none'} bpm, ${graph.heartRate.zones.length} zone bounds`);
+    for (const zone of graph.heartRate.zones) {
+      console.log(`  ${zone.slug}: min_value ${zone.minValue}, max_value ${zone.maxValue}`);
+    }
+  });
+}
+
+interface MetricSummary {
+  slug: string;
+  samples: number;
+  /** Number of zone entries when the metric carries zones, otherwise null. */
+  zones: number | null;
+}
+
+/** Fetches the performance graph raw and returns only each metric's slug, sample count, and zone count. */
+async function rawMetricSummary(workoutId: string, accessToken: string): Promise<MetricSummary[]> {
+  const response = await fetch(`${PELOTON_API_BASE}/api/workout/${encodeURIComponent(workoutId)}/performance_graph?every_n=5`, {
+    headers: { authorization: `Bearer ${accessToken}`, 'peloton-platform': 'web', accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, '/api/workout/{id}/performance_graph');
+  }
+  const body = await response.json() as { metrics?: unknown[] };
+  return (body.metrics ?? []).map((entry) => {
+    const metric = entry !== null && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+    return {
+      slug: typeof metric.slug === 'string' ? metric.slug : '(no slug)',
+      samples: Array.isArray(metric.values) ? metric.values.length : 0,
+      zones: Array.isArray(metric.zones) ? metric.zones.length : null,
+    };
+  });
+}
+
+/** Fetches the latest workout again and returns only the top-level field names. This is what settled SPEC open item 1: no device id field. */
 async function rawWorkoutKeys(userId: string, accessToken: string): Promise<string[]> {
   const response = await fetch(`${PELOTON_API_BASE}/api/user/${encodeURIComponent(userId)}/workouts?limit=1&sort_by=-created`, {
     headers: { authorization: `Bearer ${accessToken}`, 'peloton-platform': 'web', accept: 'application/json' },
@@ -332,6 +395,8 @@ async function main(): Promise<void> {
       return commandMe();
     case 'workout':
       return commandWorkout(args);
+    case 'graph':
+      return commandGraph(args);
     default:
       usage();
   }

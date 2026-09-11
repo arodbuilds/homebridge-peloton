@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ApiError, PELOTON_API_BASE, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions } from '../dist/api/peloton-api.js';
+import { ApiError, PELOTON_API_BASE, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { createFakeFetch } from './helpers/fake-fetch.mjs';
 import { apiResponse, htmlResponse, jsonResponse } from './helpers/fixtures.mjs';
 
@@ -25,13 +25,15 @@ describe('headers', () => {
       apiResponse('me-owner'),
       apiResponse('subscriptions'),
       apiResponse('workout-in-progress-cycling'),
+      apiResponse('workout-single-in-progress-cycling'),
       apiResponse('performance-graph-heart-rate'),
     ]);
     await getMe(TOKEN, fetchImpl);
     await getSubscriptions('u-owner-0001', TOKEN, fetchImpl);
     await getLatestWorkout('u-owner-0001', TOKEN, fetchImpl);
+    await getWorkout('w-cyc-0001', TOKEN, fetchImpl);
     await getPerformanceGraph('w-cyc-0001', 5, TOKEN, fetchImpl);
-    assert.equal(fetchImpl.requests.length, 4);
+    assert.equal(fetchImpl.requests.length, 5);
     for (const request of fetchImpl.requests) {
       assert.equal(request.method, 'GET');
       assert.equal(request.headers.authorization, `Bearer ${TOKEN}`);
@@ -42,6 +44,7 @@ describe('headers', () => {
       '/api/me',
       '/api/user/u-owner-0001/subscriptions',
       '/api/user/u-owner-0001/workouts?limit=1&sort_by=-created',
+      '/api/workout/w-cyc-0001',
       '/api/workout/w-cyc-0001/performance_graph?every_n=5',
     ]);
   });
@@ -119,23 +122,31 @@ describe('getSubscriptions', () => {
   });
 });
 
+const IN_PROGRESS_CYCLING = {
+  id: 'w-cyc-0001',
+  status: 'IN_PROGRESS',
+  fitnessDiscipline: 'cycling',
+  deviceType: 'home_bike_plus',
+  workoutType: 'class',
+  startTime: 1789031000,
+  endTime: null,
+  createdAt: 1789030990,
+  title: '30 min Power Zone Ride',
+  name: 'Cycling Workout',
+  isPelotonOriginatedWorkout: true,
+  is3pFitFeedWorkout: false,
+  platform: 'home_bike',
+  pelotonId: 'redacted',
+  ride: { id: 'redacted', title: '30 min Power Zone Ride', duration: 1800, instructorId: 'redacted-instructor' },
+};
+
 describe('getLatestWorkout', () => {
-  it('extracts an in-progress cycling workout', async () => {
+  it('extracts an in-progress cycling workout with the flags, platform, and ride', async () => {
     const fetchImpl = createFakeFetch([apiResponse('workout-in-progress-cycling')]);
     const workout = await getLatestWorkout('u-owner-0001', TOKEN, fetchImpl);
-    assert.deepEqual(workout, {
-      id: 'w-cyc-0001',
-      status: 'IN_PROGRESS',
-      fitnessDiscipline: 'cycling',
-      deviceType: 'home_bike_plus',
-      workoutType: 'class',
-      startTime: 1789031000,
-      endTime: null,
-      createdAt: 1789030990,
-      title: '30 min Power Zone Ride',
-      name: 'Cycling Workout',
-    });
-    assert.equal(workout.deviceId, undefined, 'no device id field in the synthesised fixture');
+    assert.deepEqual(workout, IN_PROGRESS_CYCLING);
+    assert.equal('deviceId' in workout, false, 'workouts carry no device id field; device_type is the model code');
+    assert.equal('user_id' in workout, false, 'only the listed fields are returned');
   });
 
   it('extracts a completed cycling workout', async () => {
@@ -143,6 +154,7 @@ describe('getLatestWorkout', () => {
     const workout = await getLatestWorkout('u-owner-0001', TOKEN, fetchImpl);
     assert.equal(workout.status, 'COMPLETE');
     assert.equal(workout.endTime, 1789032800);
+    assert.equal(workout.createdAt, 1789030990, 'created_at of the latest workout is the source for last workout');
   });
 
   it('extracts an in-progress strength workout', async () => {
@@ -151,7 +163,21 @@ describe('getLatestWorkout', () => {
     assert.equal(workout.id, 'w-str-0002');
     assert.equal(workout.fitnessDiscipline, 'strength');
     assert.equal(workout.deviceType, 'iOS');
+    assert.equal(workout.platform, 'ios');
     assert.equal(workout.title, '20 min Full Body Strength');
+    assert.equal(workout.ride.instructorId, 'redacted-instructor');
+  });
+
+  it('flags a run synced from a third-party fitness feed so detection can ignore it', async () => {
+    const fetchImpl = createFakeFetch([apiResponse('workout-3p-fit-feed-running')]);
+    const workout = await getLatestWorkout('u-owner-0001', TOKEN, fetchImpl);
+    assert.equal(workout.id, 'w-3p-0003');
+    assert.equal(workout.is3pFitFeedWorkout, true);
+    assert.equal(workout.isPelotonOriginatedWorkout, false);
+    assert.equal(workout.platform, 'strava');
+    assert.equal(workout.pelotonId, '');
+    assert.deepEqual(workout.ride, { id: 'redacted', title: 'Outdoor Run', duration: 1800 });
+    assert.equal('instructorId' in workout.ride, false, 'instructor id only when present');
   });
 
   it('returns null when the member has no workouts', async () => {
@@ -159,10 +185,44 @@ describe('getLatestWorkout', () => {
     assert.equal(await getLatestWorkout('u-member-0002', TOKEN, fetchImpl), null);
   });
 
-  it('carries a device id when the API has one', async () => {
-    const fetchImpl = createFakeFetch([jsonResponse(200, { data: [{ id: 'w', status: 'IN_PROGRESS', device_id: 'dev-bike-0001' }] })]);
+  it('tolerates a workout without a ride and with the flags missing', async () => {
+    const fetchImpl = createFakeFetch([jsonResponse(200, { data: [{ id: 'w', status: 'IN_PROGRESS', ride: null }] })]);
     const workout = await getLatestWorkout('u', TOKEN, fetchImpl);
-    assert.equal(workout.deviceId, 'dev-bike-0001');
+    assert.equal(workout.ride, null);
+    assert.equal(workout.isPelotonOriginatedWorkout, false);
+    assert.equal(workout.is3pFitFeedWorkout, false);
+    assert.equal(workout.platform, '');
+    assert.equal(workout.pelotonId, '');
+  });
+});
+
+describe('getWorkout', () => {
+  it('reads one workout by id with the same shape as a list entry', async () => {
+    const fetchImpl = createFakeFetch([apiResponse('workout-single-in-progress-cycling')]);
+    const workout = await getWorkout('w-cyc-0001', TOKEN, fetchImpl);
+    assert.deepEqual(workout, IN_PROGRESS_CYCLING);
+    assert.equal(fetchImpl.requests[0].url, `${PELOTON_API_BASE}/api/workout/w-cyc-0001`);
+  });
+
+  it('reads a completed workout by id', async () => {
+    const fetchImpl = createFakeFetch([apiResponse('workout-single-complete-cycling')]);
+    const workout = await getWorkout('w-cyc-0001', TOKEN, fetchImpl);
+    assert.equal(workout.status, 'COMPLETE');
+    assert.equal(workout.endTime, 1789032800);
+  });
+
+  it('encodes the workout id in the path', async () => {
+    const fetchImpl = createFakeFetch([jsonResponse(200, { id: 'a/b', status: 'COMPLETE' })]);
+    const workout = await getWorkout('a/b', TOKEN, fetchImpl);
+    assert.equal(fetchImpl.requests[0].url, `${PELOTON_API_BASE}/api/workout/a%2Fb`);
+    assert.equal(workout.id, 'a/b');
+  });
+
+  it('surfaces 404 as ApiError with the path', async () => {
+    const fetchImpl = createFakeFetch([jsonResponse(404, { status: 404, message: 'Not found' })]);
+    const error = await expectApiError(getWorkout('w-gone', TOKEN, fetchImpl), 404);
+    assert.equal(error.path, '/api/workout/w-gone');
+    assert.doesNotMatch(error.message, /Not found/);
   });
 });
 
@@ -172,7 +232,13 @@ describe('getPerformanceGraph', () => {
     const graph = await getPerformanceGraph('w-cyc-0001', 5, TOKEN, fetchImpl);
     assert.equal(graph.heartRate.latestSample, 152);
     assert.equal(graph.heartRate.zones.length, 5);
-    assert.deepEqual(graph.heartRate.zones[3], { zone: 4, slug: 'zone4', minValue: 143, maxValue: 159 });
+    assert.deepEqual(graph.heartRate.zones.map((zone) => [zone.zone, zone.slug, zone.minValue, zone.maxValue]), [
+      [1, 'zone1', 0, 108],
+      [2, 'zone2', 109, 125],
+      [3, 'zone3', 126, 141],
+      [4, 'zone4', 142, 158],
+      [5, 'zone5', 159, 168],
+    ], 'the bounds the build 2 probe confirmed on a 168 max');
     assert.deepEqual(graph.secondsSincePedalingStart, [0, 5, 10, 15, 20, 25, 30]);
   });
 

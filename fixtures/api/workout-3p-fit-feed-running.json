@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "w-3p-0003",
+      "status": "COMPLETE",
+      "fitness_discipline": "running",
+      "device_type": "",
+      "workout_type": "freestyle",
+      "start_time": 1789050000,
+      "end_time": 1789051800,
+      "created_at": 1789052400,
+      "title": "Outdoor Run",
+      "name": "Running Workout",
+      "user_id": "u-owner-0001",
+      "peloton_id": "",
+      "is_peloton_originated_workout": false,
+      "is_3p_fit_feed_workout": true,
+      "platform": "strava",
+      "ride": { "id": "redacted", "title": "Outdoor Run", "duration": 1800 }
+    }
+  ],
+  "limit": 1,
+  "page": 0,
+  "total": 413
+}

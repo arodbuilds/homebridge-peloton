@@ -1,0 +1,10 @@
+{
+  "status": 303,
+  "headers": {
+    "location": "https://auth.onepeloton.com/continue?state=redacted-resume-state",
+    "set-cookie": [
+      "peloton_visited_domains=redacted-visited-domains; Path=/; Expires=Sat, 11 Sep 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=None"
+    ]
+  },
+  "body": ""
+}

@@ -24,11 +24,11 @@
       "values": [98, 112, 125, 133, 141, 148, 152],
       "slug": "heart_rate",
       "zones": [
-        { "display_name": "Zone 1", "slug": "zone1", "range": "<65%", "max_value": 109, "min_value": 0, "duration": 5 },
-        { "display_name": "Zone 2", "slug": "zone2", "range": "65-75%", "max_value": 125, "min_value": 110, "duration": 10 },
-        { "display_name": "Zone 3", "slug": "zone3", "range": "75-85%", "max_value": 142, "min_value": 126, "duration": 10 },
-        { "display_name": "Zone 4", "slug": "zone4", "range": "85-95%", "max_value": 159, "min_value": 143, "duration": 5 },
-        { "display_name": "Zone 5", "slug": "zone5", "range": ">95%", "max_value": 220, "min_value": 160, "duration": 0 }
+        { "display_name": "Zone 1", "slug": "zone1", "range": "<65%", "max_value": 108, "min_value": 0, "duration": 5 },
+        { "display_name": "Zone 2", "slug": "zone2", "range": "65-75%", "max_value": 125, "min_value": 109, "duration": 10 },
+        { "display_name": "Zone 3", "slug": "zone3", "range": "75-85%", "max_value": 141, "min_value": 126, "duration": 10 },
+        { "display_name": "Zone 4", "slug": "zone4", "range": "85-95%", "max_value": 158, "min_value": 142, "duration": 5 },
+        { "display_name": "Zone 5", "slug": "zone5", "range": ">95%", "max_value": 168, "min_value": 159, "duration": 0 }
       ]
     },
     {
