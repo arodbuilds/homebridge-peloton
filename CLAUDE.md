@@ -43,7 +43,8 @@ test/                      node:test suites and helpers
 ## Testing
 
 - Test runner is node:test. `npm test` builds first, then runs `test/*.test.mjs` against `dist/`.
-- Claude Code cannot reach onepeloton.com. The network is always mocked: tests use a fake fetch that replays fixtures from `fixtures/` in sequence and records every request so headers and bodies can be asserted.
-- The clock is injectable everywhere timing matters (token expiry, the poller, hold and dwell timers). Tests drive it; nothing sleeps.
+- Claude Code cannot reach onepeloton.com. The network is always mocked: tests use a fake fetch that replays fixtures from `fixtures/` in sequence and records every request so headers and bodies can be asserted. `test/helpers/fake-fetch.mjs` replays one queue in order (auth, api, and store suites); `test/helpers/routed-fetch.mjs` routes by URL with a queue per route whose last step repeats (poller and platform suites, where several accounts and calls interleave).
+- The clock is injectable everywhere timing matters (token expiry, the poller, hold and dwell timers). Tests drive it; nothing sleeps. `test/helpers/fake-clock.mjs` is both the clock and the scheduler: `advance(ms)` fires due timers in order and waits on `Poller.whenIdle()` between them so real file I/O in the store settles.
+- Accessory and platform tests use hap-nodejs objects directly (a dev dependency pinned to Homebridge's version) and a fake Homebridge API that records register, update, and unregister calls.
 - Fixtures are sanitised: shortened ids, replaced names, tokens replaced with "redacted".
 - Coverage expectations are in SPEC.md section 13. Poller tests cover every state transition; rules tests cover every matching path; store tests cover atomic writes and refresh token rotation.
