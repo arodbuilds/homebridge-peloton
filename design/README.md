@@ -51,7 +51,7 @@ Intro: "Sign in as the membership owner and every household profile appears here
 **Account card** (1 px `--ns-cardborder`, 6 px radius, 16 px below). Row, 12 px gap, padding 12 px 16 px, wraps at phone width:
 - Avatar 40 px disc. Real profile photo if present; otherwise initials on `--ns-locked` disc, text inherits body colour, 14.4 px weight 600. Never Peloton's placeholder image.
 - Name (weight 600) + `@username` (secondary colour) + "Owner" badge on the primary account (badge: `--ns-badge` fill, white, 11.5 px weight 600, 3 px 7 px padding, 4 px radius).
-- Subline (12.6 px, secondary) by status; metadata line "Last workout 3 days ago".
+- Subline (12.6 px, secondary) by status; metadata line "Last workout 3 days ago". Clarification (SPEC 4.2 and 10): the time comes from the created_at of the latest Peloton-originated workout in the account's workouts list (imports with is_3p_fit_feed_workout true are skipped), never from the profile's last_workout_at, which is stale. The line is omitted when the list is empty.
 - Right column: status pill, then link buttons (14.4 px, `--ns-link`; Remove in `--ns-danger`).
 
 | Status | Pill | Subline | Links |
