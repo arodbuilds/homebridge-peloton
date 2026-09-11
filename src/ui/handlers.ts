@@ -58,9 +58,12 @@ export interface AccountSummary {
   lastWorkoutAt: number | null;
 }
 
+/** One device on the membership for the Devices line: the page shows name, or the capitalised group when name is null. */
 export interface DeviceSummary {
   id: string;
-  name: string;
+  name: string | null;
+  /** "bike", "tread", or "guide"; empty for a record written before device_group was stored. */
+  group: string;
 }
 
 export interface StatusResponse {
@@ -93,6 +96,8 @@ export const BROWSER_SESSION_TTL_MS = 10 * 60 * 1000;
 export const AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** The last workout time is asked from Peloton at most this often per account. */
 export const LAST_WORKOUT_CACHE_TTL_MS = 60 * 1000;
+/** /status re-reads the owner's subscriptions when the stored household is older than this. */
+export const HOUSEHOLD_REFRESH_MS = 60 * 60 * 1000;
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -140,8 +145,14 @@ export class UiHandlers {
     };
   }
 
-  /** Every stored account, connected or not, with the household devices and the plugin version. */
+  /**
+   * Every stored account, connected or not, with the household devices and the plugin version. An
+   * owner whose stored household is older than an hour has it re-read first, so a page opened after
+   * an upgrade shows current names and devices without waiting for the daily check-in; a failure
+   * there leaves the stored household as it was.
+   */
   async status(): Promise<StatusResponse> {
+    await this.refreshStaleHousehold();
     const records = await this.options.store.loadAll();
     const accounts = await Promise.all([...records.entries()].map(([id, record]) => this.summarizeFresh(id, record)));
     return { ok: true, accounts, devices: devicesOf(await this.options.store.loadAll()), version: this.options.version };
@@ -226,16 +237,12 @@ export class UiHandlers {
     let attempts = 0;
     let firstError: unknown;
     for (const [id, record] of records) {
-      if (record.state !== 'connected' || record.accessToken === undefined || record.userId === undefined || record.isOwner === false) {
+      if (!UiHandlers.mayOwn(record)) {
         continue;
       }
       attempts += 1;
-      const userId = record.userId;
       try {
-        const subscriptions = await this.options.store.withValidToken(id, (token) => this.options.api.getSubscriptions(userId, token));
-        const current = (await this.options.store.load(id)) ?? record;
-        await applyHousehold(this.options.store, current, subscriptions);
-        await this.options.store.save(id, current);
+        await this.readHousehold(id, record);
       } catch (error) {
         firstError ??= error;
       }
@@ -305,6 +312,37 @@ export class UiHandlers {
       login: this.options.auth.login,
       now: this.now,
     };
+  }
+
+  /** True for a connected account that may own a membership: tokens, a userId, and no subscriptions read that said otherwise. */
+  private static mayOwn(record: AccountRecord): record is AccountRecord & { userId: string } {
+    return record.state === 'connected' && record.accessToken !== undefined && record.userId !== undefined && record.isOwner !== false;
+  }
+
+  /** Reads the account's subscriptions and applies the household (SPEC section 7) to its current record. */
+  private async readHousehold(id: string, record: AccountRecord & { userId: string }): Promise<void> {
+    const subscriptions = await this.options.store.withValidToken(id, (token) => this.options.api.getSubscriptions(record.userId, token));
+    const current = (await this.options.store.load(id)) ?? record;
+    await applyHousehold(this.options.store, current, subscriptions, this.now());
+    await this.options.store.save(id, current);
+  }
+
+  /**
+   * Re-reads the membership for every possible owner whose householdFetchedAt is missing or older
+   * than HOUSEHOLD_REFRESH_MS. Failures are swallowed: /status answers from the store either way,
+   * and a dead session is already marked reconnect_needed by the store.
+   */
+  private async refreshStaleHousehold(): Promise<void> {
+    for (const [id, record] of await this.options.store.loadAll()) {
+      if (!UiHandlers.mayOwn(record) || this.now() - (record.householdFetchedAt ?? 0) < HOUSEHOLD_REFRESH_MS) {
+        continue;
+      }
+      try {
+        await this.readHousehold(id, record);
+      } catch {
+        // The stored household stands until the next /status, /household, or check-in.
+      }
+    }
   }
 
   /** Summarises the account after its last workout time is known, re-reading the record so a refresh on the way is reflected. */
@@ -397,15 +435,23 @@ export function imageTypeOf(bytes: Uint8Array): string | undefined {
 }
 
 /**
- * Names of the membership's devices from the owner's record, for the read-only Devices line. A device
- * without an id counts by its name, so two unnamed-id entries never collapse into one.
+ * The membership's devices from the owner's record, for the read-only Devices line, keyed by id, else
+ * name, else group so no two devices collapse into one. A record written by an earlier build carries
+ * no group; it reads as empty until the next subscriptions read. A device with neither a name nor a
+ * group is nothing the page could show and is left out.
  */
 export function devicesOf(records: Map<string, AccountRecord>): DeviceSummary[] {
   const devices: DeviceSummary[] = [];
   for (const record of records.values()) {
-    for (const device of record.devices ?? []) {
-      if (device.name.length > 0 && !devices.some((known) => (known.id || known.name) === (device.id || device.name))) {
-        devices.push({ id: device.id, name: device.name });
+    for (const stored of record.devices ?? []) {
+      const device: DeviceSummary = {
+        id: typeof stored.id === 'string' ? stored.id : '',
+        name: typeof stored.name === 'string' && stored.name.length > 0 ? stored.name : null,
+        group: typeof stored.group === 'string' ? stored.group : '',
+      };
+      const key = device.id || device.name || device.group;
+      if ((device.name !== null || device.group.length > 0) && !devices.some((known) => (known.id || known.name || known.group) === key)) {
+        devices.push(device);
       }
     }
   }
