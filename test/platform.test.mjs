@@ -92,7 +92,7 @@ const CONFIG = {
     { id: 'a3', email: 'other@example.com', displayName: 'Other' },
   ],
   triggers: [
-    { id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', device: 'dev-bike-0001' },
+    { id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', device: 'bike' },
     { id: 't2', type: 'workout', name: 'Strength', accessory: 'switch', activities: ['strength'] },
   ],
   polling: { fastSwitch: true, standbyInterval: 120 },
@@ -176,6 +176,33 @@ describe('startup', () => {
     assert.deepEqual(log.lines.error, []);
   });
 
+  it('reconciles triggers by id after a config change: new ids register, removed ids unregister, changed kinds swap in place', async () => {
+    // Before the change: t1 was an occupancy sensor, t-old existed, t2 did not.
+    const t1 = new FakePlatformAccessory('Workout', triggerUuid(hap, 't1'));
+    t1.addService(Service.OccupancySensor, 'Workout');
+    const old = new FakePlatformAccessory('Old', triggerUuid(hap, 't-old'));
+    old.addService(Service.OccupancySensor, 'Old');
+    const { api } = await launch({
+      cached: [t1, old],
+      config: {
+        ...CONFIG,
+        triggers: [
+          { id: 't1', type: 'workout', name: 'Workout renamed', accessory: 'switch' },
+          { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', who: 'u-owner-0001' },
+        ],
+      },
+    });
+    // t1 kept its UUID and accessory, swapped OccupancySensor for Switch, and took the new name.
+    assert.equal(t1.getService(Service.OccupancySensor), undefined);
+    assert.ok(t1.getService(Service.Switch));
+    assert.equal(t1.displayName, 'Workout renamed');
+    assert.equal(t1.getService(Service.Switch).getCharacteristic(Characteristic.Name).value, 'Workout renamed');
+    assert.deepEqual(api.calls.updated.flat().map((accessory) => accessory.UUID), [t1.UUID]);
+    // t-old left config and was unregistered; t2 is new and was registered.
+    assert.deepEqual(api.calls.unregistered.flat().flatMap((call) => call.accessories.map((accessory) => accessory.UUID)), [old.UUID]);
+    assert.ok(api.calls.registered[0].accessories.some((accessory) => accessory.UUID === triggerUuid(hap, 't2')));
+  });
+
   it('removes the fast polling switch and attention sensor when config turns them off', async () => {
     const fast = new FakePlatformAccessory('Peloton fast polling', fastPollingSwitchUuid(hap));
     const attention = new FakePlatformAccessory('Peloton attention needed', attentionSensorUuid(hap));
@@ -250,6 +277,25 @@ describe('startup sign-in', () => {
     assert.equal(fetch.calls('/api/user/u-owner-0001/workouts')[0]?.headers.authorization ?? 'Bearer access-login', 'Bearer access-login');
   });
 
+  it('reconciles a household profile with the account that signs in as that member at startup', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/api/me', apiResponse('me-member')).route('/subscriptions', apiResponse('subscriptions')).route('/workouts', apiResponse('workouts-empty'));
+    const login = fakeLogin({ 'member@example.com': TOKENS });
+    // The owner's subscriptions created a profile for the member, keyed by userId, before the member had a config entry.
+    const profile = { userId: 'u-member-0002', username: 'member_runner', displayName: 'Member Example', state: 'not_connected' };
+    const { store, platform } = await launch({
+      fetch,
+      login,
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[1]] },
+      records: { 'u-member-0002': profile },
+    });
+    const records = await store.loadAll();
+    assert.deepEqual([...records.keys()], ['a2']);
+    assert.equal(records.get('a2').userId, 'u-member-0002');
+    assert.equal(records.get('a2').state, 'connected');
+    assert.deepEqual(platform.activePoller.activeAccountIds, ['a2']);
+  });
+
   it('logs one line and leaves the record untouched when the sign-in fails, then skips the account', async () => {
     const fetch = createRoutedFetch();
     fetch.route('/workouts', apiResponse('workouts-empty'));
@@ -320,7 +366,7 @@ describe('startup sign-in', () => {
 });
 
 describe('wiring', () => {
-  it('polls the connected account with the stored device map and drives the sensors and the switch', async () => {
+  it('polls the connected account and drives the sensors and the switch', async () => {
     const fetch = createRoutedFetch();
     fetch.route('/api/user/u-owner-0001/workouts', apiResponse('workout-in-progress-cycling'))
       .route(/\/api\/workout\/w-cyc-0001$/, apiResponse('workout-single-in-progress-cycling'));
@@ -334,7 +380,6 @@ describe('wiring', () => {
       Characteristic.OccupancyDetected.OCCUPANCY_DETECTED,
     );
     assert.equal(strength.getService(Service.Switch).getCharacteristic(Characteristic.On).value, false);
-    assert.equal(log.lines.info.some((line) => line.includes('device filtering is unavailable')), false, 'the stored device map resolves the bike');
     assert.deepEqual(log.lines.info.slice(2), ['Alex: workout started (cycling, 30 min Power Zone Ride)', 'Workout: on']);
 
     const fast = platform.accessories.get(fastPollingSwitchUuid(hap));

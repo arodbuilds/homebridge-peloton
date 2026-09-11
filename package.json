@@ -25,6 +25,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "homebridge-ui/public",
+    "homebridge-ui/server.js",
     "config.schema.json",
     "LICENSE",
     "README.md",
@@ -48,6 +50,7 @@
     "@eslint/js": "^10.0.1",
     "@homebridge/hap-nodejs": "2.2.2",
     "@types/node": "^22.20.2",
+    "ajv": "^8.20.0",
     "eslint": "^10.9.0",
     "homebridge": "^2.4.0",
     "nodemon": "^3.1.14",

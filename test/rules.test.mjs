@@ -3,14 +3,13 @@ import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getPerformanceGraph } from '../dist/api/peloton-api.js';
 import {
-  EMPTY_DEVICE_MAP,
   HoldAfterEnd,
   HoldState,
+  PLATFORM_BY_DEVICE,
   defaultZones,
   deviceMatches,
   hrZoneTargets,
   isDetectable,
-  matchWorkout,
   workoutMatches,
   zoneBounds,
   zoneForSample,
@@ -33,7 +32,10 @@ function trigger(overrides = {}) {
   return { id: 't1', type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', activities: [], device: 'any', holdAfterEnd: 90, ...overrides };
 }
 
-const BIKE_MAP = new Map([['home_bike_plus', 'dev-bike-0001']]);
+/** A Tread run as the Pi ride test reported it: device_type prism, platform home_tread. */
+function onTread(workout) {
+  return { ...workout, fitnessDiscipline: 'running', deviceType: 'prism', platform: 'home_tread' };
+}
 
 describe('isDetectable', () => {
   it('accepts IN_PROGRESS and COMPLETE Peloton workouts', async () => {
@@ -55,56 +57,76 @@ describe('isDetectable', () => {
 describe('workoutMatches', () => {
   it('matches anyone with all activities and any device', async () => {
     const cycling = await workoutFixture('workout-in-progress-cycling');
-    assert.equal(workoutMatches(trigger(), cycling, OWNER, EMPTY_DEVICE_MAP), true);
-    assert.equal(workoutMatches(trigger(), cycling, MEMBER, EMPTY_DEVICE_MAP), true);
+    assert.equal(workoutMatches(trigger(), cycling, OWNER), true);
+    assert.equal(workoutMatches(trigger(), cycling, MEMBER), true);
   });
 
   it('matches who only for that account userId', async () => {
     const cycling = await workoutFixture('workout-in-progress-cycling');
-    assert.equal(workoutMatches(trigger({ who: OWNER }), cycling, OWNER, EMPTY_DEVICE_MAP), true);
-    assert.equal(workoutMatches(trigger({ who: OWNER }), cycling, MEMBER, EMPTY_DEVICE_MAP), false);
+    assert.equal(workoutMatches(trigger({ who: OWNER }), cycling, OWNER), true);
+    assert.equal(workoutMatches(trigger({ who: OWNER }), cycling, MEMBER), false);
   });
 
   it('matches activities when the list is empty or contains the discipline', async () => {
     const cycling = await workoutFixture('workout-in-progress-cycling');
     const strength = await workoutFixture('workout-in-progress-strength');
-    assert.equal(workoutMatches(trigger({ activities: ['cycling', 'running'] }), cycling, OWNER, EMPTY_DEVICE_MAP), true);
-    assert.equal(workoutMatches(trigger({ activities: ['cycling', 'running'] }), strength, OWNER, EMPTY_DEVICE_MAP), false);
-    assert.equal(workoutMatches(trigger({ activities: [] }), strength, OWNER, EMPTY_DEVICE_MAP), true);
+    assert.equal(workoutMatches(trigger({ activities: ['cycling', 'running'] }), cycling, OWNER), true);
+    assert.equal(workoutMatches(trigger({ activities: ['cycling', 'running'] }), strength, OWNER), false);
+    assert.equal(workoutMatches(trigger({ activities: [] }), strength, OWNER), true);
   });
 
   it('never matches an unknown discipline against a restricted list but does against all activities', async () => {
     const cycling = await workoutFixture('workout-in-progress-cycling');
     const odd = { ...cycling, fitnessDiscipline: 'caving' };
-    assert.equal(workoutMatches(trigger({ activities: ['cycling'] }), odd, OWNER, EMPTY_DEVICE_MAP), false);
-    assert.equal(workoutMatches(trigger(), odd, OWNER, EMPTY_DEVICE_MAP), true);
+    assert.equal(workoutMatches(trigger({ activities: ['cycling'] }), odd, OWNER), false);
+    assert.equal(workoutMatches(trigger(), odd, OWNER), true);
   });
 
-  it('matches device through the device_type map', async () => {
+  it('maps the bike filter to platform home_bike and the tread filter to home_tread', () => {
+    assert.deepEqual(PLATFORM_BY_DEVICE, { bike: 'home_bike', tread: 'home_tread' });
+  });
+
+  it('matches a Bike+ ride (device_type home_bike_plus, platform home_bike) for bike and any but not tread', async () => {
     const cycling = await workoutFixture('workout-in-progress-cycling');
-    assert.equal(deviceMatches('any', cycling, EMPTY_DEVICE_MAP), 'match');
-    assert.equal(deviceMatches('dev-bike-0001', cycling, BIKE_MAP), 'match');
-    assert.equal(deviceMatches('dev-tread-0002', cycling, BIKE_MAP), 'no_match');
-    assert.equal(workoutMatches(trigger({ device: 'dev-bike-0001' }), cycling, OWNER, BIKE_MAP), true);
-    assert.equal(workoutMatches(trigger({ device: 'dev-tread-0002' }), cycling, OWNER, BIKE_MAP), false);
+    assert.equal(cycling.deviceType, 'home_bike_plus');
+    assert.equal(cycling.platform, 'home_bike');
+    assert.equal(deviceMatches('any', cycling), true);
+    assert.equal(deviceMatches('bike', cycling), true);
+    assert.equal(deviceMatches('tread', cycling), false);
+    assert.equal(workoutMatches(trigger({ device: 'bike' }), cycling, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'tread' }), cycling, OWNER), false);
+    assert.equal(workoutMatches(trigger({ device: 'any' }), cycling, OWNER), true);
   });
 
-  it('treats the device filter as any and reports it when the map has no entry for the device_type', async () => {
-    const strength = await workoutFixture('workout-in-progress-strength');
-    assert.equal(deviceMatches('dev-bike-0001', strength, BIKE_MAP), 'unavailable');
-    assert.deepEqual(matchWorkout(trigger({ device: 'dev-bike-0001' }), strength, OWNER, BIKE_MAP), { matches: true, deviceUnavailable: true });
-    const noType = { ...strength, deviceType: '' };
-    assert.equal(deviceMatches('dev-bike-0001', noType, BIKE_MAP), 'unavailable');
+  it('matches a Tread run (device_type prism, platform home_tread) for tread and any but not bike', async () => {
+    const run = onTread(await workoutFixture('workout-in-progress-cycling'));
+    assert.equal(deviceMatches('tread', run), true);
+    assert.equal(deviceMatches('bike', run), false);
+    assert.equal(deviceMatches('any', run), true);
+    assert.equal(workoutMatches(trigger({ device: 'tread' }), run, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'tread', activities: ['running'] }), run, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'bike' }), run, OWNER), false);
   });
 
-  it('does not report the device as unavailable when who or activities already exclude the workout', async () => {
+  it('matches an app workout or an Apple Health import (platform iOS_app) only for any', async () => {
     const strength = await workoutFixture('workout-in-progress-strength');
-    assert.deepEqual(matchWorkout(trigger({ who: OWNER, device: 'dev-bike-0001' }), strength, MEMBER, BIKE_MAP), {
-      matches: false, deviceUnavailable: false,
-    });
-    assert.deepEqual(matchWorkout(trigger({ activities: ['cycling'], device: 'dev-bike-0001' }), strength, OWNER, BIKE_MAP), {
-      matches: false, deviceUnavailable: false,
-    });
+    assert.equal(deviceMatches('bike', strength), false);
+    assert.equal(deviceMatches('tread', strength), false);
+    assert.equal(deviceMatches('any', strength), true);
+    const imported = await workoutFixture('workout-3p-fit-feed-running');
+    assert.equal(imported.deviceType, 'apple_health');
+    assert.equal(imported.platform, 'iOS_app');
+    assert.equal(deviceMatches('bike', imported), false);
+    assert.equal(deviceMatches('tread', imported), false);
+    assert.equal(deviceMatches('any', imported), true);
+    // An unknown filter value never matches; config.ts replaces it with "any" before it gets here.
+    assert.equal(deviceMatches('rower', strength), false);
+  });
+
+  it('checks who and activities before the device, so an excluded workout never matches on device alone', async () => {
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    assert.equal(workoutMatches(trigger({ who: OWNER, device: 'bike' }), cycling, MEMBER), false);
+    assert.equal(workoutMatches(trigger({ activities: ['running'], device: 'bike' }), cycling, OWNER), false);
   });
 
   it('targets a heart-rate zone trigger only at its account, never anyone', () => {

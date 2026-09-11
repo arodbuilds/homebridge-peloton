@@ -4,7 +4,7 @@
       "id": "w-3p-0003",
       "status": "COMPLETE",
       "fitness_discipline": "running",
-      "device_type": "",
+      "device_type": "apple_health",
       "workout_type": "freestyle",
       "start_time": 1789050000,
       "end_time": 1789051800,
@@ -15,7 +15,7 @@
       "peloton_id": "",
       "is_peloton_originated_workout": false,
       "is_3p_fit_feed_workout": true,
-      "platform": "strava",
+      "platform": "iOS_app",
       "ride": { "id": "redacted", "title": "Outdoor Run", "duration": 1800 }
     }
   ],

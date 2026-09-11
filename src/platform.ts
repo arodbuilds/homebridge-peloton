@@ -1,7 +1,20 @@
 /**
- * The Peloton platform: loads config, opens the account store, builds the device map, constructs the
- * poller with the real clock, registers accessories, and connects poller events to them.
+ * The Peloton platform: loads config, opens the account store, constructs the poller with the real
+ * clock, reconciles the accessories with config, and connects poller events to them.
  * Info log lines are the ones SPEC section 11 lists and nothing more.
+ *
+ * Reconciliation by id (SPEC sections 6 and 9), on every start and so after every config change,
+ * since Homebridge restarts the plugin when config.json is saved:
+ * - triggers: a trigger id with no cached accessory gets one registered; a cached accessory whose id
+ *   left config is unregistered; a cached one whose accessory kind changed has its service swapped
+ *   in place (TriggerSensor), keeping the UUID and therefore the HomeKit automations; every kept
+ *   accessory is renamed from its trigger and passed to updatePlatformAccessories.
+ * - accounts: the account store is keyed by config account id. An account with email and password
+ *   but no usable stored sign-in is signed in at startup (the build 2 path); a household profile the
+ *   owner's subscriptions created for the same member is removed once that sign-in names its userId
+ *   (connectWithTokens), so the page shows one card per member. Records the settings page removed
+ *   are gone already (/remove); records whose id left config by hand edit are left in place and
+ *   ignored. Connected accounts with a userId are polled, the rest are skipped with one info line.
  */
 
 import type { API, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig } from 'homebridge';
@@ -13,8 +26,7 @@ import { TriggerSensor } from './accessories/trigger-sensor.js';
 import { ApiError, getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from './api/peloton-api.js';
 import { AuthError, login } from './auth/peloton-auth.js';
 import { type AccountConfig, type PelotonConfig, parseConfig } from './config.js';
-import { Poller, type PollerAccount, type PollerLog, type Scheduler, deviceMapFromDevices } from './poller/poller.js';
-import type { DeviceMap } from './poller/rules.js';
+import { Poller, type PollerAccount, type PollerLog, type Scheduler } from './poller/poller.js';
 import { PLATFORM_NAME, PLUGIN_NAME, PLUGIN_VERSION } from './settings.js';
 import { type ConnectDependencies, type LoginFn, connectAccount } from './store/account-connect.js';
 import { type AccountRecord, AccountStore } from './store/account-store.js';
@@ -78,10 +90,8 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
     const records = await this.store.loadAll();
 
     const accounts = this.selectAccounts(config, records);
-    const deviceMap = this.buildDeviceMap(records);
-    const deviceMaps = new Map<string, DeviceMap>(accounts.map((account) => [account.id, deviceMap]));
 
-    this.registerAccessories();
+    this.reconcileAccessories();
 
     const fetchImpl = this.deps.fetchImpl;
     const pollerLog: PollerLog = {
@@ -103,7 +113,6 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       log: pollerLog,
       now: this.deps.now,
       scheduler: this.deps.scheduler,
-      deviceMaps,
       reconnect: (accountId) => this.reconnect(accountId),
     });
     this.wireEvents(records);
@@ -203,14 +212,8 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
     return accounts;
   }
 
-  /** device_type to device id from every stored household device; the household shares its hardware. */
-  private buildDeviceMap(records: Map<string, AccountRecord>): DeviceMap {
-    const devices = [...records.values()].flatMap((record) => record.devices ?? []);
-    return deviceMapFromDevices(devices);
-  }
-
-  /** Creates or refreshes every accessory the config wants and unregisters the rest. */
-  private registerAccessories(): void {
+  /** Creates or refreshes every accessory the config wants, by trigger id, and unregisters the rest. */
+  private reconcileAccessories(): void {
     const config = this.pelotonConfig;
     const { hap } = this.api;
     const wanted = new Set<string>();

@@ -11,6 +11,11 @@ import { randomUUID } from 'node:crypto';
 
 export type AccessoryKind = 'occupancy' | 'switch';
 
+/** A workout trigger's device filter: any hardware, the Bike or Bike+, or the Tread or Tread+ (SPEC section 8.3). */
+export type DeviceFilter = 'any' | 'bike' | 'tread';
+
+export const DEVICE_FILTERS: readonly DeviceFilter[] = ['any', 'bike', 'tread'];
+
 export interface AccountConfig {
   id: string;
   email?: string;
@@ -28,8 +33,8 @@ export interface WorkoutTriggerConfig {
   who: string;
   /** Empty means all activities. */
   activities: string[];
-  /** "any" or a device id from attached_devices. */
-  device: string;
+  /** "any", "bike", or "tread"; matched against the workout's platform. */
+  device: DeviceFilter;
   /** Seconds the sensor stays on after the workout ends. */
   holdAfterEnd: number;
 }
@@ -203,7 +208,7 @@ function parseTrigger(record: Json, index: number, seenIds: Set<string>, generat
     accessory,
     who,
     activities: activities(record.activities, label, warn),
-    device: typeof record.device === 'string' && record.device.length > 0 ? record.device : 'any',
+    device: deviceFilter(record.device, label, warn),
     holdAfterEnd: integer(record.holdAfterEnd, { name: `${label}.holdAfterEnd`, fallback: CONFIG_DEFAULTS.holdAfterEnd, min: 0 }, warn),
   };
 }
@@ -221,6 +226,17 @@ function ensureId(value: unknown, label: string, seenIds: Set<string>, generateI
   const reason = typeof value === 'string' && seenIds.has(value) ? 'duplicates another id' : 'has no id';
   warn(`${label} ${reason}; using a generated id for this run. Save the config from the settings page so the id persists`);
   return generated;
+}
+
+function deviceFilter(value: unknown, label: string, warn: WarnFn): DeviceFilter {
+  if (value === undefined) {
+    return 'any';
+  }
+  if (typeof value === 'string' && (DEVICE_FILTERS as readonly string[]).includes(value)) {
+    return value as DeviceFilter;
+  }
+  warn(`${label}.device is not "any", "bike", or "tread", using "any"`);
+  return 'any';
 }
 
 function activities(value: unknown, label: string, warn: WarnFn): string[] {

@@ -4,9 +4,25 @@ All notable changes to homebridge-peloton are listed here. The format follows Ke
 
 ## Unreleased
 
-Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
+Build 3 of 4: config schema, settings page, UI server, device matching by platform. Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.
 
 ### Added
+
+- The settings page (`homebridge-ui/public/`), plain HTML, CSS, and ES modules served by the Homebridge UI: Accounts with cards, status pills, avatars, the inline connect panel with email and password and the Sign in with browser fallback, Add account, and the membership's device names; Triggers as Workout and Heart-rate zone cards with badges, activity chips, the add chooser, Duplicate and Remove; Polling with the Fast polling switch block, the intervals, the live request estimate, and the dismissible automation callout; Settings with Name, Debug logging, and Advanced holding the auto-off minutes, the Attention needed sensor, the daily check-in time, and Restore from backup. Validation on blur, a sticky summary box that gates Save, the blocking Polling error, the reconnect banner, the unsaved-changes bar, empty and first-run states, the phone layout, and both host themes follow design/README.md.
+- The settings UI server (`src/ui/`, started by `homebridge-ui/server.js`): /status, /connect, /browser/start, /browser/finish, /test, /household, /remove, and /avatar over the same account store, auth, and API modules the platform uses. Errors carry an auth stage or `api` with the HTTP status; tokens never leave the server; config.json is never written by it. Profile photos are proxied with a 24 hour cache.
+- `connectWithTokens` in the shared connect flow for the browser sign-in path, and the removal of a household profile once a configured account connects as that member.
+- `config.schema.json` with the full SPEC section 6 shape, the section 2 defaults, the settings page copy, and the validation constraints, marked as using the custom UI.
+- Account write-back from the page: id, email, display name, and userId from the store on save; the password only when entered on the page, else the stored one unchanged.
+- Test suites for the schema (ajv, a dev dependency), the UI server handlers with a fake store and fake fetch, the page model, and platform reconciliation by id.
+- README walkthrough for the settings page: connect the owner, members connect, add a trigger, set up the fast polling automation, and the browser sign-in fallback with the Back button instruction; the hand-edited config.json moved to a Manual configuration appendix.
+
+### Changed
+
+- A trigger's device is `any`, `bike`, or `tread`, matched by the workout's platform (`home_bike` for the Bike and Bike+, `home_tread` for the Tread), the codes the Pi ride tests reported. The device_type map learned from attached_devices and the "device filtering is unavailable" log line are gone; device_type stays in the debug poll line. Any other device value becomes `any` with a warn line.
+- The third-party import fixture is an Apple Health import (device_type `apple_health`, platform `iOS_app`), as the Pi reported it.
+- SPEC sections 6, 7, 8.3, 9, 10, and 15 fold build 3 in; section 15 keeps the one open item.
+
+### Added in builds 1 and 2
 
 - Config parsing and validation (`src/config.ts`) with the SPEC defaults: invalid values are clamped or defaulted with one warn line each, and missing or duplicate ids are generated for the run with a warn line asking for a save from the settings page.
 - Trigger rules (`src/poller/rules.ts`): workout detectability, matching by who, activities, and device through a device_type map learned from attached devices, zone bounds in SPEC priority order with rounded-down defaults, zone from a sample, a hold helper with a hold time in each direction, and the workout sensor's hold after end.
@@ -28,7 +44,7 @@ Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4:
 - Probe `graph <workoutId>` command that prints the metric slugs, sample counts, and heart-rate zone bounds of one workout's performance graph.
 - CLAUDE.md with the working rules, README first pass, and this changelog.
 
-### Changed
+### Changed in builds 1 and 2
 
 - Attached devices from the subscriptions call carry `deviceType` when present, and the account store keeps `isOwner` and the owner's `devices` so the device map survives a restart. `withValidToken` takes a `forceRefresh` option for the daily check-in.
 - README describes the config.json shape for a hand-edited setup and where sign-ins are stored.

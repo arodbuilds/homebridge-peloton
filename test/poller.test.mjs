@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { AuthError } from '../dist/auth/peloton-auth.js';
 import { parseConfig } from '../dist/config.js';
-import { Poller, backoffInterval, deviceMapFromDevices, nextLocalTime } from '../dist/poller/poller.js';
+import { Poller, backoffInterval, nextLocalTime } from '../dist/poller/poller.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
 import { apiFixture, apiResponse, jsonResponse } from './helpers/fixtures.mjs';
@@ -67,7 +67,7 @@ function graphBody(bpm, offset) {
   return jsonResponse(200, body);
 }
 
-async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], refresh, records = {}, deviceMaps, reconnect } = {}) {
+async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], refresh, records = {}, reconnect } = {}) {
   const clock = createFakeClock();
   const fetch = createRoutedFetch();
   const lines = { info: [], warn: [], debug: [] };
@@ -109,7 +109,7 @@ async function harness({ config: rawConfig = {}, accounts = [OWNER, MEMBER], ref
     getSubscriptions: (userId, token) => getSubscriptions(userId, token, fetch),
   };
   const config = parseConfig({ triggers: [workoutTrigger()], ...rawConfig }, { warn: log.warn });
-  const poller = new Poller({ config, accounts, api, store, log, now: clock.now, scheduler: clock, deviceMaps, reconnect });
+  const poller = new Poller({ config, accounts, api, store, log, now: clock.now, scheduler: clock, reconnect });
   clock.idle = () => poller.whenIdle();
   const events = [];
   const eventNames = [
@@ -264,27 +264,41 @@ describe('lock-on', () => {
     assert.deepEqual(h.named('workoutEnded'), []);
   });
 
-  it('applies who, activities, and device filters at lock-on and logs device filtering once per device_type', async () => {
-    const h = await harness({
-      accounts: [OWNER],
-      deviceMaps: new Map([['a1', deviceMapFromDevices([{ id: 'dev-bike-0001', deviceType: 'home_bike_plus' }])]]),
-      config: {
-        triggers: [
-          workoutTrigger({ id: 't-any' }),
-          workoutTrigger({ id: 't-member', who: MEMBER.userId }),
-          workoutTrigger({ id: 't-run', activities: ['running'] }),
-          workoutTrigger({ id: 't-bike', device: 'dev-bike-0001' }),
-          workoutTrigger({ id: 't-tread', device: 'dev-tread-0002' }),
-        ],
-      },
-    });
-    h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iOS' }))
+  it('applies who, activities, and device filters at lock-on, matching the device by the workout platform', async () => {
+    const triggers = [
+      workoutTrigger({ id: 't-any' }),
+      workoutTrigger({ id: 't-member', who: MEMBER.userId }),
+      workoutTrigger({ id: 't-run', activities: ['running'] }),
+      workoutTrigger({ id: 't-bike', device: 'bike' }),
+      workoutTrigger({ id: 't-tread', device: 'tread' }),
+    ];
+    // A Bike+ ride: device_type home_bike_plus, platform home_bike.
+    const bike = await harness({ accounts: [OWNER], config: { triggers } });
+    bike.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    bike.poller.start();
+    await bike.clock.advance(0);
+    assert.deepEqual([...bike.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', true], ['t-tread', false]]);
+    assert.match(bike.lines.debug[0], /device_type=home_bike_plus platform=home_bike$/);
+    bike.poller.stop();
+
+    // A Tread run: device_type prism, platform home_tread.
+    const tread = await harness({ accounts: [OWNER], config: { triggers } });
+    tread.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'running', device_type: 'prism', platform: 'home_tread' }))
       .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
-    h.poller.start();
-    await h.clock.advance(0);
-    assert.deepEqual([...h.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', true], ['t-tread', true]]);
-    assert.equal(h.lines.info.filter((line) => line.includes('device filtering is unavailable')).length, 1);
-    assert.ok(h.lines.info.includes('Owner: device filtering is unavailable for device_type "iOS", treating the device filter as any'));
+    tread.poller.start();
+    await tread.clock.advance(0);
+    assert.deepEqual([...tread.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', true], ['t-bike', false], ['t-tread', true]]);
+    assert.match(tread.lines.debug[0], /device_type=prism platform=home_tread$/);
+    tread.poller.stop();
+
+    // An app workout matches neither hardware filter; nothing about devices is logged at info.
+    const app = await harness({ accounts: [OWNER], config: { triggers } });
+    app.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iOS', platform: 'ios' }))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    app.poller.start();
+    await app.clock.advance(0);
+    assert.deepEqual([...app.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', false], ['t-tread', false]]);
+    assert.equal(app.lines.info.some((line) => line.includes('device')), false);
   });
 });
 
@@ -741,7 +755,7 @@ describe('daily check-in', () => {
   });
 
   it('runs at dailyCheckIn even with standby 0, refreshing tokens and updating zones, household, and devices', async () => {
-    const h = await harness({ config: { polling: { standbyInterval: 0 }, triggers: [workoutTrigger({ device: 'dev-bike-0001' })] } });
+    const h = await harness({ config: { polling: { standbyInterval: 0 }, triggers: [workoutTrigger({ device: 'bike' })] } });
     h.fetch.route('/api/me', [apiResponse('me-owner'), apiResponse('me-member')]).route('/subscriptions', apiResponse('subscriptions'));
     h.poller.start();
     const due = expectedCheckIn(h.clock.now());
@@ -786,7 +800,7 @@ describe('daily check-in', () => {
       state: 'not_connected',
     });
 
-    // The next check-in is a day later, and the learned device map now resolves the bike.
+    // The next check-in is a day later, and polling resumes on the switch with the bike trigger matching by platform.
     assert.equal(h.clock.pending().at(-1).at, due + 24 * HOUR);
     h.poller.setSwitch(true);
     h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(LIST_MEMBER, apiResponse('workouts-empty'))
@@ -794,7 +808,6 @@ describe('daily check-in', () => {
     await h.clock.advance(0);
     assert.equal(h.poller.state, 'locked');
     assert.equal(h.poller.triggerStates.get('t-workout'), true);
-    assert.equal(h.lines.info.some((line) => line.includes('device filtering is unavailable')), false);
   });
 
   it('skips an account whose check-in fails and drops one whose refresh returns invalid_grant', async () => {
