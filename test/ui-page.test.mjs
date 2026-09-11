@@ -168,6 +168,48 @@ describe('ids over plain http', () => {
   });
 });
 
+describe('new trigger names', () => {
+  function addTrigger(root, tileName) {
+    buttonNamed(root, 'Add trigger').click();
+    [...root.querySelectorAll('.ns-chooser-tile')].find((tile) => tile.querySelector('.ns-tile-name').textContent === tileName).click();
+  }
+
+  it('prefills Workout on a new Workout card', () => {
+    const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    addTrigger(root, 'Workout');
+    const card = root.querySelector('.ns-trigger-card');
+    assert.equal(page.config.triggers[0].name, 'Workout');
+    assert.equal(card.querySelector('[data-path$=".name"] input').value, 'Workout');
+    assert.equal(card.querySelector('[data-path$=".name"] input').getAttribute('placeholder'), null);
+    assert.equal(card.querySelector('.ns-card-title').textContent, 'Workout');
+  });
+
+  it('prefills Zone 4 or higher on a new Heart-rate zone card and follows the zone until the name is edited', () => {
+    const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    addTrigger(root, 'Heart-rate zone');
+    const card = root.querySelector('.ns-trigger-card');
+    const name = card.querySelector('[data-path$=".name"] input');
+    const zone = card.querySelector('[data-path$=".zone"] select');
+    assert.equal(name.value, 'Zone 4 or higher');
+    assert.equal(page.config.triggers[0].who, 'u-owner-0001', 'the first connected member is preselected');
+
+    zone.value = '3';
+    zone.dispatchEvent('change');
+    assert.equal(page.config.triggers[0].name, 'Zone 3 or higher');
+    assert.equal(name.value, 'Zone 3 or higher');
+    assert.equal(card.querySelector('.ns-card-title').textContent, 'Zone 3 or higher');
+    assert.equal(pushedBlock().triggers[0].name, 'Zone 3 or higher');
+
+    name.value = 'Sprint';
+    name.dispatchEvent('input');
+    zone.value = '5';
+    zone.dispatchEvent('change');
+    assert.equal(page.config.triggers[0].name, 'Sprint', 'an edited name is left alone');
+    assert.equal(name.value, 'Sprint');
+    assert.equal(page.config.triggers[0].zone, 5);
+  });
+});
+
 describe('iframe height', () => {
   it('asks the host to size the iframe after every render and after the summary box changes', () => {
     resizes.count = 0;

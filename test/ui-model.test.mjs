@@ -5,8 +5,8 @@ import { describe, it } from 'node:test';
 
 import { STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, deviceLabel, devicesText, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig,
-  removeAccountEntry, validate,
+  ACTIVITIES, backupBlock, defaultTriggerName, deviceLabel, devicesText, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId,
+  newTrigger, readConfig, removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -84,14 +84,30 @@ describe('ids', () => {
 });
 
 describe('triggers', () => {
-  it('starts a new card empty with the defaults and preselects the first connected member for a zone trigger', () => {
+  it('starts a new card with the defaults and the Name prefilled, and preselects the first connected member for a zone trigger', () => {
     const workout = newTrigger('workout');
     assert.deepEqual(workout, {
-      id: workout.id, type: 'workout', name: '', accessory: 'occupancy', who: 'anyone', activities: [...ACTIVITIES], device: 'any', holdAfterEnd: 90,
+      id: workout.id, type: 'workout', name: 'Workout', accessory: 'occupancy', who: 'anyone', activities: [...ACTIVITIES], device: 'any', holdAfterEnd: 90,
     });
     const zone = newTrigger('hrZone', 'u-owner-0001');
-    assert.deepEqual(zone, { id: zone.id, type: 'hrZone', name: '', accessory: 'occupancy', who: 'u-owner-0001', zone: 4, holdTime: 20 });
+    assert.deepEqual(zone, {
+      id: zone.id, type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: 'u-owner-0001', zone: 4, holdTime: 20, nameFollowsZone: true,
+    });
     assert.equal(newTrigger('hrZone').who, '');
+    assert.equal(defaultTriggerName('hrZone', 2), 'Zone 2 or higher');
+    assert.equal(defaultTriggerName('workout'), 'Workout');
+  });
+
+  it('never writes the page-side nameFollowsZone flag to config.json', () => {
+    const config = readConfig({});
+    config.triggers.push(newTrigger('hrZone', 'u-owner-0001'));
+    assert.equal('nameFollowsZone' in exportConfig(config).triggers[0], false);
+  });
+
+  it('duplicates a zone trigger with a name of its own that no longer follows the zone', () => {
+    const copy = duplicateTrigger(newTrigger('hrZone', 'u-owner-0001'), ['Zone 4 or higher'], ' copy');
+    assert.equal(copy.name, 'Zone 4 or higher copy');
+    assert.equal('nameFollowsZone' in copy, false);
   });
 
   it('reads unset or empty activities as every activity selected, writes an all-selected set as an empty list, and a subset as given', () => {
