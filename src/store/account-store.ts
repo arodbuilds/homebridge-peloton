@@ -191,7 +191,15 @@ export class AccountStore {
   }
 
   private async doRefresh(accountId: string, record: AccountRecord): Promise<AccountRecord> {
-    const refreshToken = record.refreshToken as string;
+    // Another caller may have rotated the tokens between this caller's load and now. Re-read the
+    // file and reuse a fresh rotation rather than refreshing with a token Auth0 has already retired.
+    const current = await this.load(accountId);
+    if (current !== undefined && current.refreshToken !== undefined && current.accessToken !== undefined
+      && current.refreshToken !== record.refreshToken
+      && (current.accessTokenExpiresAt ?? 0) - this.now() > REFRESH_AHEAD_MS) {
+      return current;
+    }
+    const refreshToken = (current?.refreshToken ?? record.refreshToken) as string;
     let tokens: Tokens;
     try {
       tokens = await this.refresh(refreshToken, this.fetchImpl);

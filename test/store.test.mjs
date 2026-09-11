@@ -271,6 +271,34 @@ describe('withValidToken', () => {
     assert.deepEqual(refresh.calls, ['refresh-1']);
   });
 
+  it('reuses a rotation another caller already persisted instead of refreshing with a retired token', async () => {
+    const refresh = fakeRefresh([{ accessToken: 'access-2', refreshToken: 'refresh-2', expiresAt: NOW + 48 * HOUR }]);
+    const store = new AccountStore({ storagePath, now: () => NOW, refresh });
+    const stale = connected({ accessTokenExpiresAt: NOW + HOUR });
+    await store.save('a1', stale);
+    // Caller A refreshes and persists the rotation.
+    assert.equal(await store.withValidToken('a1', async (token) => token), 'access-2');
+    // Caller B loaded the record before that rotation landed and only now reaches the refresh step.
+    const result = await store.refreshAccount('a1', stale);
+    assert.equal(result.accessToken, 'access-2');
+    assert.equal(result.refreshToken, 'refresh-2');
+    assert.deepEqual(refresh.calls, ['refresh-1'], 'refresh-1 was never sent a second time');
+  });
+
+  it('refreshes with the token on disk when a stale caller finds a rotation that is itself near expiry', async () => {
+    const refresh = fakeRefresh([
+      { accessToken: 'access-2', refreshToken: 'refresh-2', expiresAt: NOW + HOUR },
+      { accessToken: 'access-3', refreshToken: 'refresh-3', expiresAt: NOW + 48 * HOUR },
+    ]);
+    const store = new AccountStore({ storagePath, now: () => NOW, refresh });
+    const stale = connected({ accessTokenExpiresAt: NOW + HOUR });
+    await store.save('a1', stale);
+    await store.withValidToken('a1', async (token) => token);
+    const result = await store.refreshAccount('a1', stale);
+    assert.equal(result.accessToken, 'access-3');
+    assert.deepEqual(refresh.calls, ['refresh-1', 'refresh-2']);
+  });
+
   it('uses the real refresh through the injected fetch by default', async () => {
     const fetchImpl = createFakeFetch([
       jsonResponse(200, { access_token: 'access-live', refresh_token: 'refresh-live', expires_in: 172800 }),
