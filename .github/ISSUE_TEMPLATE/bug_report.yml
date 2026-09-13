@@ -1,0 +1,100 @@
+name: Bug report
+description: Something in the plugin does not work as described.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in the footer of the plugin settings page.
+      placeholder: "0.1.0-beta.1"
+    validations:
+      required: true
+  - type: input
+    id: homebridge-version
+    attributes:
+      label: Homebridge version
+      placeholder: "2.4.0"
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      placeholder: "22.12.0"
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      placeholder: "Raspberry Pi 4, Docker, macOS…"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-in and accounts
+        - Workout triggers
+        - Heart rate zone triggers
+        - Fast polling switch
+        - Settings UI
+        - Installation
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: equipment
+    attributes:
+      label: Equipment
+      options:
+        - Bike
+        - Bike+
+        - Tread
+        - Tread+
+        - Row
+        - Guide
+        - App only
+        - Not equipment specific
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: what-you-expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: log-lines
+    attributes:
+      label: Homebridge log lines
+      description: Turn on Debug logging in Advanced first. The plugin never logs passwords or tokens, but check before pasting.
+      render: shell
+  - type: textarea
+    id: config-without-credentials
+    attributes:
+      label: Plugin config without credentials
+      description: Your platform block from config.json with every password removed.
+      render: json
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I am on the latest version
+          required: true
+        - label: I searched existing issues
+          required: true

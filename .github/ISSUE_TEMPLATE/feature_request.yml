@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a change or an addition to the plugin.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what-you-want
+    attributes:
+      label: What you want
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+    validations:
+      required: true
+  - type: dropdown
+    id: related-area
+    attributes:
+      label: Related area
+      options:
+        - Sign-in and accounts
+        - Workout triggers
+        - Heart rate zone triggers
+        - Fast polling switch
+        - Settings UI
+        - Installation
+        - New device support
+        - Other
+  - type: checkboxes
+    id: willing-to-test
+    attributes:
+      label: Testing
+      options:
+        - label: I am willing to test
