@@ -94,8 +94,10 @@ Any trigger that means "a workout is about to start" works in place of the light
 
 ![The Settings section with Advanced open: the auto-off period, the Attention needed sensor, the daily check-in time, and Restore from backup](assets/screenshots/settings.png)
 
-Settings holds the plugin name and Debug logging. Under Advanced:
+Settings holds one Advanced disclosure, collapsed until something inside it is changed:
 
+- Name: the plugin name, shown in Homebridge logs and as the bridge name in the Home app.
+- Debug logging: logs every poll and the workout data it returns; sign-in details and session tokens are never logged.
 - Fast polling switch turns off after: the auto-off period in minutes.
 - Attention needed sensor: an occupancy sensor that is on while any account needs to be reconnected, for an automation that sends you a notification.
 - Daily check-in time: once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out.
@@ -146,7 +148,7 @@ Node 20 or later. Install with `npm install`, then:
 | `npm test` | Builds, then runs the node:test suites in `test/` against `dist/` and the settings page |
 | `npm run watch` | Rebuilds on change and restarts a development Homebridge from `test/hbConfig` |
 
-The network is always mocked in tests. Fixtures live under `fixtures/`, sanitised recordings of Peloton's login pages and API answers; see `fixtures/README.md` for what each file stands in for. The settings page is plain HTML, CSS, and ES modules under `homebridge-ui/public/`, served by the Homebridge UI with no build step; its server side is compiled from `src/ui/` and started by `homebridge-ui/server.js`. [SPEC.md](SPEC.md) is the source of truth for behaviour and [design/README.md](design/README.md) for the settings page.
+The network is always mocked in tests. Fixtures live under `fixtures/`, sanitised recordings of Peloton's login pages and API answers; see `fixtures/README.md` for what each file stands in for. The settings page is plain HTML, CSS, and ES modules under `homebridge-ui/public/`, served by the Homebridge UI with no build step; it runs on the Homebridge Plugin Shell shared with homebridge-notify-switch (the shell files are listed in [design/README.md](design/README.md)), and its server side is compiled from `src/ui/` and started by `homebridge-ui/server.js`. [SPEC.md](SPEC.md) is the source of truth for behaviour and [design/README.md](design/README.md) for the settings page.
 
 ### Auth probe
 
