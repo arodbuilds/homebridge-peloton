@@ -2,6 +2,32 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1.
 
+## Unreleased
+
+Beta.2, PR 1 of 2: the settings page aligned with the Homebridge Plugin Shell as homebridge-notify-switch v1.3.2 ships it. The Guide device option, the Heart-rate zone suppression and the version bump follow in PR 2.
+
+### Added
+
+- The shell files under `homebridge-ui/public/`: `index.css` copied byte for byte from homebridge-notify-switch v1.3.2, and `dom.js`, `card.js`, `draft.js`, `footer.js` and `shell-copy.js` ported function by function from the shell's TypeScript at that tag; `peloton.css` and `peloton-dom.js` hold what only Peloton draws. design/README.md lists which files are the shell's and which are Peloton's.
+- The shell contract in `design/`: `HANDOFF.md`, `BUILD-CONTRACT.md` and `BUILD-CONTRACT-DEFINITIONS.md` from that tag, with the beta.2 export (`peloton-settings.html`), its handoff notes and the alignment inventory, resolved item by item in design/README.md.
+- Trigger cards open and close from the whole header row (click, Enter, Space) with a chevron at the right edge, "Show settings" while collapsed and "Done" while open, the help toggle only while open, and a muted summary of the key values after the badges while collapsed (who, device, activities and keep-on for a Workout card; member, zone and hold for a Heart-rate zone card). The only trigger, a new one and a duplicate open expanded.
+- Every empty required field reads "{Label} is required." from one label table (`FIELD_LABELS` in copy.js), so an empty trigger Name reads "Name is required." in the field and in the summary box.
+- A draft suite (`test/ui-draft.test.mjs`) and page tests for the moved Settings fields, the card header, the summary box, the draft rules, the estimate and the callout.
+
+### Changed
+
+- Settings is the intro and one collapsed Advanced disclosure holding, in this order, Name, Debug logging, Fast polling switch turns off after (minutes), Attention needed sensor, Daily check-in time and Restore from backup; it opens when anything inside differs from its default, turns invalid, or is targeted by a summary entry. The Restore caption reads as in Notify Switch.
+- The summary box sits in the page flow after Settings and before the closing paragraph, in the warning tone with the shell's `#ffecb5` border and no shadow, instead of sticking to the bottom of the page. Its entries are updated in place and, clicked, focus the named control itself, opening a collapsed card or Advanced first and rebuilding nothing.
+- The unsaved draft is written only once something changed on the page, never by the load, and is never offered on a page that opens with no saved Peloton configuration.
+- The Fast polling switch's Name is always shown; the standby estimate counts Connected and Checking accounts.
+- The callout's dismiss is a "Dismiss" text link; disabled buttons keep full opacity on a transparent fill with the secondary text colour; card titles are weight 700; every colour is a host Bootstrap variable with the light value as fallback, re-declared for dark mode by the shell stylesheet.
+- SPEC sections 10, 13 and 16 and design/README.md record the alignment and the three Peloton exceptions to the shell contract (no card primary action, Polling uncarded, the Checking spinner).
+
+### Fixed
+
+- The iframe scroll latch: the shell's `:root, :root > body { overflow: hidden; height: auto }` rule replaces the `html, body` rule of build 4, no fixed or percentage height remains, and nothing on the page calls scrollIntoView. Checked in headless Chromium with the page inside a scrolling modal body in both themes at 900 and 400 px: documentElement.scrollHeight equals clientHeight, the posted height settles without a resize loop, and the first wheel gesture at the top and at the bottom of the page scrolls the modal.
+- Adding a trigger from the chooser now reaches the host at once, instead of on the next edit.
+
 ## 0.1.0-beta.1 (2026-09-11)
 
 First beta, to the npm beta tag. Build 4 of 4: banner, README, release prep, and the last Chrome pass findings. Build 3 of 4: config schema, settings page, UI server, device matching by platform. Build 2 of 4: config, rules, poller, accessories, platform wiring. Build 1 of 4: scaffold, auth module, account store, fixtures, tests.

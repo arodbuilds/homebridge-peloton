@@ -1,12 +1,16 @@
 /**
  * The page's view of the platform block (SPEC section 6): reading config.json into editable
  * objects, writing it back, new and duplicated triggers, validation (design/README.md, Validation),
- * and the unsaved draft kept in localStorage between visits.
+ * and the checks the restore and the draft (draft.js) run on a block before it is read.
  */
 
-import { POLLING, VALIDATION } from './copy.js';
+import { FIELD_LABELS, POLLING, VALIDATION } from './copy.js';
+import { required } from './shell-copy.js';
 
 export const PLATFORM = 'Peloton';
+
+/** A backup or draft over this size is never read or written (the shell's limit; a Peloton block is a few kilobytes). */
+export const MAX_BACKUP_BYTES = 1024 * 1024;
 
 export const DEFAULTS = {
   name: 'Peloton',
@@ -262,15 +266,25 @@ export function exportConfig(config, summaries = []) {
   };
 }
 
+/**
+ * A platform block with every password removed: what the draft in localStorage holds (draft.js, the shell's
+ * `blockWithoutCredentials`) and what two configurations are compared on. Never mutates its argument.
+ */
+export function blockWithoutPasswords(block) {
+  const out = { ...block };
+  if (Array.isArray(out.accounts)) {
+    out.accounts = out.accounts.map((account) => {
+      const copy = { ...account };
+      delete copy.password;
+      return copy;
+    });
+  }
+  return out;
+}
+
 /** The block without passwords, for the draft in localStorage and for comparing two configurations. */
 export function exportConfigWithoutPasswords(config, summaries = []) {
-  const block = exportConfig(config, summaries);
-  block.accounts = block.accounts.map((account) => {
-    const copy = { ...account };
-    delete copy.password;
-    return copy;
-  });
-  return block;
+  return blockWithoutPasswords(exportConfig(config, summaries));
 }
 
 /** The name a trigger starts with (design/README.md): "Workout", or "Zone {n} or higher" for the zone it watches. */
@@ -336,7 +350,8 @@ export function validate(config, options = {}) {
     const label = titles[index];
     const key = trigger.name.trim().toLowerCase();
     if (key.length === 0) {
-      issues.push({ path: `${path}.name`, label, message: VALIDATION.triggerName });
+      // An empty required field names itself from the label table (shell rule W4): "Name is required."
+      issues.push({ path: `${path}.name`, label, message: required(FIELD_LABELS.name) });
     } else if ((nameCounts.get(key) ?? 0) > 1) {
       issues.push({ path: `${path}.name`, label, message: VALIDATION.duplicateName, related: config.triggers.map((_, i) => `triggers[${i}].name`) });
     }
@@ -367,7 +382,7 @@ export function validate(config, options = {}) {
 
   const settings = VALIDATION.labels.settings;
   if (config.name.trim().length === 0) {
-    issues.push({ path: 'name', label: settings, message: VALIDATION.nameRequired });
+    issues.push({ path: 'name', label: settings, message: required(FIELD_LABELS.name) });
   }
   if (!Number.isFinite(config.advanced.fastSwitchAutoOffMinutes) || config.advanced.fastSwitchAutoOffMinutes < 1) {
     issues.push({ path: 'advanced.fastSwitchAutoOffMinutes', label: settings, message: VALIDATION.minutesFloor });
@@ -378,98 +393,47 @@ export function validate(config, options = {}) {
   return issues;
 }
 
-/** True when the page holds nothing but defaults: no accounts, no triggers, every setting as installed. */
+/**
+ * True when the page holds nothing but defaults: no accounts, no triggers, every setting as installed.
+ * exportConfig builds its objects in a fixed key order, so the two blocks compare as JSON.
+ */
 export function isFreshConfig(config) {
   return config.accounts.length === 0 && config.triggers.length === 0
-    && stableStringify(exportConfigWithoutPasswords(config)) === stableStringify(exportConfigWithoutPasswords(readConfig({})));
+    && JSON.stringify(exportConfigWithoutPasswords(config)) === JSON.stringify(exportConfigWithoutPasswords(readConfig({})));
 }
 
-/** JSON with object keys sorted at every level, so two equal configurations compare equal whatever their key order. */
-export function stableStringify(value) {
+/**
+ * The first key in the tree that could reach a prototype (`__proto__`, `constructor`, `prototype`), or
+ * undefined when there is none: the shell's safeKeys check, which draft.js and the restore run before
+ * anything is read into the page.
+ */
+export function findForbiddenKey(value) {
   if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
+    for (const entry of value) {
+      const found = findForbiddenKey(entry);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
   }
   if (typeof value === 'object' && value !== null) {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-/* ------------------------------------------------------------------------------------------------
- * Unsaved draft (the host machinery notify-switch also uses): the in-progress block without
- * passwords is written to localStorage on every change; on the next load a draft that differs from
- * the saved configuration and is less than a day old is offered back.
- * ---------------------------------------------------------------------------------------------- */
-
-export const DRAFT_KEY = 'homebridge-peloton:draft';
-export const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const DRAFT_MAX_BYTES = 1024 * 1024;
-
-function storage() {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveDraft(block, now = Date.now()) {
-  try {
-    const textValue = JSON.stringify({ savedAt: now, config: block });
-    if (textValue.length > DRAFT_MAX_BYTES) {
-      return;
+    for (const key of Object.keys(value)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        return key;
+      }
+      const found = findForbiddenKey(value[key]);
+      if (found !== undefined) {
+        return found;
+      }
     }
-    storage()?.setItem(DRAFT_KEY, textValue);
-  } catch {
-    // Storage full or disabled: the draft is a convenience, never a requirement.
   }
-}
-
-export function clearDraft() {
-  try {
-    storage()?.removeItem(DRAFT_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-/** The stored draft when it is well formed and younger than a day; anything else is removed and yields undefined. */
-export function readDraft(now = Date.now()) {
-  try {
-    const textValue = storage()?.getItem(DRAFT_KEY);
-    if (!textValue) {
-      return undefined;
-    }
-    if (textValue.length > DRAFT_MAX_BYTES) {
-      clearDraft();
-      return undefined;
-    }
-    const parsed = JSON.parse(textValue);
-    const fresh = typeof parsed.savedAt === 'number' && now - parsed.savedAt >= 0 && now - parsed.savedAt < DRAFT_MAX_AGE_MS;
-    if (!fresh || typeof parsed.config !== 'object' || parsed.config === null || Array.isArray(parsed.config) || hasForbiddenKey(parsed.config)) {
-      clearDraft();
-      return undefined;
-    }
-    return { savedAt: parsed.savedAt, config: parsed.config };
-  } catch {
-    clearDraft();
-    return undefined;
-  }
+  return undefined;
 }
 
 /** True when any object in the tree carries a key that could reach a prototype. */
 export function hasForbiddenKey(value) {
-  if (Array.isArray(value)) {
-    return value.some(hasForbiddenKey);
-  }
-  if (typeof value === 'object' && value !== null) {
-    for (const key of Object.keys(value)) {
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype' || hasForbiddenKey(value[key])) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return findForbiddenKey(value) !== undefined;
 }
 
 /**

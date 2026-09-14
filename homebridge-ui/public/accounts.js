@@ -5,12 +5,18 @@
  */
 
 import { callServer } from './api.js';
+import { headerBadge } from './card.js';
 import { ACCOUNTS, CONNECT, PROMOTE_BROWSER_STAGES, stageMessage } from './copy.js';
 import {
-  append, badge, clear, dangerLinkButton, el, helpText, initialsOf, inlineConfirm, linkButton, outlineLinkButton, passwordField, pill, primaryButton,
-  relativeTime, textField,
+  append, button, clear, dangerLinkButton, el, helpText, inlineConfirm, linkButton, paragraph, passwordField, sectionAddClass, textField,
 } from './dom.js';
 import { devicesText, newId } from './model.js';
+import { initialsOf, outlineLinkButton, pill, relativeTime } from './peloton-dom.js';
+
+/** The Connect button: the 38px primary button of the shell (the same as a section's Add button). */
+function connectButton(onClick) {
+  return button(CONNECT.connect, onClick, sectionAddClass(true));
+}
 
 /** The key of the panel that adds a profile not on the household list. */
 export const NEW_ACCOUNT = 'new';
@@ -64,7 +70,7 @@ function makeView(key, account, summary) {
 
 export function renderAccounts(app, container) {
   const ui = app.accountsUi;
-  container.appendChild(el('p', { class: 'ns-section-copy' }, ACCOUNTS.intro));
+  container.appendChild(paragraph(ACCOUNTS.intro));
   const views = accountViews(app);
   const list = el('div', { class: 'ns-account-list' });
   if (views.length === 0) {
@@ -73,7 +79,7 @@ export function renderAccounts(app, container) {
       ui.panel = newPanel(app, NEW_ACCOUNT, undefined);
       ui.panel.firstRun = true;
     }
-    const card = el('div', { class: 'ns-card ns-first-run-card' });
+    const card = el('div', { class: 'card mb-3 ns-first-run-card' });
     card.appendChild(el('div', { class: 'ns-connect-panel ns-first-run-panel' },
       el('p', { class: 'ns-first-run', style: 'margin-top:0' }, ACCOUNTS.firstRun),
       renderPanel(app, ui.panel),
@@ -89,11 +95,11 @@ export function renderAccounts(app, container) {
 
   const addRow = el('div', { class: 'ns-add-account' });
   if (ui.panel && ui.panel.key === NEW_ACCOUNT) {
-    addRow.appendChild(el('div', { class: 'ns-standalone-panel' }, renderPanel(app, ui.panel)));
+    addRow.appendChild(el('div', { class: 'card ns-standalone-panel' }, renderPanel(app, ui.panel)));
   } else {
     addRow.appendChild(linkButton(ACCOUNTS.addAccount, () => {
       ui.panel = newPanel(app, NEW_ACCOUNT, undefined);
-      app.rerender('accounts');
+      app.rerender('accounts', false);
       focusPanel(container);
     }, 'ns-add-account-link'));
   }
@@ -135,7 +141,7 @@ function renderCard(app, view) {
   const checking = ui.checking.has(view.key) || (ui.panel?.key === view.key && ui.panel.busy);
   const state = checking ? 'checking' : view.state;
   const spec = ACCOUNTS.status[state];
-  const card = el('div', { class: 'ns-card ns-account-card', 'data-account': view.key });
+  const card = el('div', { class: 'card mb-3 ns-account-card', 'data-account': view.key });
 
   const avatar = el('div', { class: 'ns-avatar', 'aria-hidden': 'true' }, initialsOf(view.name, view.username));
   if (view.avatar) {
@@ -152,7 +158,7 @@ function renderCard(app, view) {
     nameRow.appendChild(el('span', { class: 'ns-secondary', style: 'font-size:14.4px' }, `@${view.username}`));
   }
   if (view.isOwner) {
-    nameRow.appendChild(badge(ACCOUNTS.owner, 'filled'));
+    nameRow.appendChild(headerBadge(ACCOUNTS.owner, 'type'));
   }
   const main = el('div', { class: 'ns-account-main' }, nameRow);
   const subline = state === 'connected' && view.lastCheckedAt ? spec.subline(relativeTime(view.lastCheckedAt, app.now())) : spec.subline();
@@ -172,7 +178,7 @@ function renderCard(app, view) {
         start,
         question: () => ACCOUNTS.removeQuestion(view.name),
         confirmLabel: ACCOUNTS.removeConfirm,
-        confirmClass: 'btn btn-danger btn-sm ns-small',
+        confirmClass: 'btn btn-danger btn-sm',
         cancelLabel: ACCOUNTS.cancel,
         onConfirm: () => {
           app.removeAccount(view).catch(() => undefined);
@@ -185,7 +191,7 @@ function renderCard(app, view) {
     } else {
       links.appendChild(linkButton(ACCOUNTS.links[link], () => {
         ui.panel = newPanel(app, view.key, view);
-        app.rerender('accounts');
+        app.rerender('accounts', false);
         focusPanel(card.parentElement ?? card);
       }));
     }
@@ -207,21 +213,24 @@ async function runTest(app, view) {
   const ui = app.accountsUi;
   ui.checking.add(view.key);
   ui.results.delete(view.key);
-  app.rerender('accounts');
+  app.rerender('accounts', false);
+  app.rerender('polling', false);
   const result = await callServer('/test', { id: view.key });
   ui.checking.delete(view.key);
   if (result.ok) {
     if (view.summary) {
       view.summary.lastCheckedAt = result.lastCheckedAt;
     }
-    app.rerender('accounts');
+    app.rerender('accounts', false);
+    app.rerender('polling', false);
     return;
   }
   ui.results.set(view.key, { tone: 'danger', text: result.unavailable ? result.message : stageMessage(result.stage, result.status) });
   if (result.stage === 'refresh') {
     await app.refreshStatus();
   } else {
-    app.rerender('accounts');
+    app.rerender('accounts', false);
+    app.rerender('polling', false);
   }
 }
 
@@ -246,7 +255,7 @@ function cancelButton(app, panel) {
   }
   return linkButton(CONNECT.cancel, () => {
     app.accountsUi.panel = null;
-    app.rerender('accounts');
+    app.rerender('accounts', false);
   }, 'ns-secondary');
 }
 
@@ -255,14 +264,14 @@ function renderPasswordPanel(app, panel) {
   const email = textField(CONNECT.email, panel.email, (value) => {
     panel.email = value;
   }, { type: 'email', autocomplete: 'username', placeholder: panel.email ? undefined : CONNECT.emailPlaceholder });
-  const password = passwordField(CONNECT.password, (value) => {
+  const password = passwordField(CONNECT.password, '', (value) => {
     panel.password = value;
-  }, { help: CONNECT.passwordCaption, showLabel: CONNECT.show, hideLabel: CONNECT.hide });
+  }, { help: CONNECT.passwordCaption });
   box.appendChild(email);
   box.appendChild(password);
   append(box, resultBox(panel));
 
-  const connect = primaryButton(CONNECT.connect, () => {
+  const connect = connectButton(() => {
     submitPassword(app, panel).catch(() => undefined);
   });
   connect.disabled = panel.busy;
@@ -270,7 +279,7 @@ function renderPasswordPanel(app, panel) {
   const toBrowser = () => {
     panel.mode = 'browser';
     panel.result = null;
-    app.rerender('accounts');
+    app.rerender('accounts', false);
   };
   if (panel.result?.promote) {
     actions.appendChild(outlineLinkButton(CONNECT.browserPromoted, toBrowser));
@@ -291,17 +300,18 @@ async function submitPassword(app, panel) {
   const email = panel.email.trim();
   if (email.length === 0) {
     panel.result = { tone: 'danger', text: CONNECT.emailMissing };
-    app.rerender('accounts');
+    app.rerender('accounts', false);
     return;
   }
   if (panel.password.length === 0) {
     panel.result = { tone: 'danger', text: CONNECT.passwordMissing };
-    app.rerender('accounts');
+    app.rerender('accounts', false);
     return;
   }
   panel.busy = true;
   panel.result = null;
-  app.rerender('accounts');
+  app.rerender('accounts', false);
+  app.rerender('polling', false);
   const result = await callServer('/connect', { id: panel.accountId, email, password: panel.password });
   panel.busy = false;
   if (result.ok) {
@@ -313,7 +323,8 @@ async function submitPassword(app, panel) {
     text: result.unavailable ? result.message : stageMessage(result.stage, result.status),
     promote: !result.unavailable && PROMOTE_BROWSER_STAGES.includes(result.stage),
   };
-  app.rerender('accounts');
+  app.rerender('accounts', false);
+  app.rerender('polling', false);
 }
 
 function renderBrowserPanel(app, panel) {
@@ -334,7 +345,7 @@ function renderBrowserPanel(app, panel) {
   });
   box.appendChild(callback);
   append(box, resultBox(panel));
-  const connect = primaryButton(CONNECT.connect, () => {
+  const connect = connectButton(() => {
     submitCallback(app, panel).catch(() => undefined);
   });
   connect.disabled = panel.busy;
@@ -343,7 +354,7 @@ function renderBrowserPanel(app, panel) {
     linkButton(CONNECT.usePassword, () => {
       panel.mode = 'password';
       panel.result = null;
-      app.rerender('accounts');
+      app.rerender('accounts', false);
     }),
     cancelButton(app, panel),
   ));
@@ -360,7 +371,7 @@ async function openSignIn(app, panel) {
   const result = await callServer('/browser/start', { id: panel.accountId });
   if (!result.ok) {
     panel.result = { tone: 'danger', text: result.unavailable ? result.message : stageMessage(result.stage, result.status) };
-    app.rerender('accounts');
+    app.rerender('accounts', false);
     return;
   }
   panel.started = true;
@@ -372,17 +383,18 @@ async function submitCallback(app, panel) {
   const callbackUrl = panel.callbackUrl.trim();
   if (callbackUrl.length === 0) {
     panel.result = { tone: 'danger', text: CONNECT.callbackMissing };
-    app.rerender('accounts');
+    app.rerender('accounts', false);
     return;
   }
   if (!panel.started) {
     panel.result = { tone: 'danger', text: CONNECT.openFirst };
-    app.rerender('accounts');
+    app.rerender('accounts', false);
     return;
   }
   panel.busy = true;
   panel.result = null;
-  app.rerender('accounts');
+  app.rerender('accounts', false);
+  app.rerender('polling', false);
   const result = await callServer('/browser/finish', { id: panel.accountId, callbackUrl });
   panel.busy = false;
   if (result.ok) {
@@ -390,5 +402,6 @@ async function submitCallback(app, panel) {
     return;
   }
   panel.result = { tone: 'danger', text: result.unavailable ? result.message : stageMessage(result.stage, result.status) };
-  app.rerender('accounts');
+  app.rerender('accounts', false);
+  app.rerender('polling', false);
 }

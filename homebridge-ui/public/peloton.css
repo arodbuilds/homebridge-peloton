@@ -1,0 +1,440 @@
+/* The Peloton settings page on the Homebridge Plugin Shell. index.css is the shell stylesheet, copied from
+   homebridge-notify-switch v1.3.2 without edits: the scroll rule, the container, the grid, the cards, the buttons,
+   the summary box, the draft bar, the footer and the dark-mode re-declarations of the Bootstrap variables. This
+   file holds what only Peloton draws (design/README.md): the tokens the Peloton rules read, the account cards
+   and their pills, the connect panel, the activity chips, the callout, the collapsible trigger card header, the
+   section error and the outlined badges. Every colour is a host Bootstrap variable with the host's light value as
+   the fallback; the two values the host has no variable for (the subtle strip and the warning border) are literals,
+   the strip re-declared under the host's dark marker. The root element carries both classes, so the Bootstrap
+   variables the shell re-declares for dark mode on `.notify-switch-ui` are the ones these tokens resolve to. */
+
+.peloton-ui {
+  --ns-secondary: var(--bs-secondary-color, rgba(33, 37, 41, 0.75));
+  --ns-border: var(--bs-border-color, #dee2e6);
+  --ns-cardborder: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.176));
+  --ns-subtle: rgba(33, 37, 41, 0.03);
+  --ns-locked: var(--bs-secondary-bg, #e9ecef);
+  --ns-link: var(--bs-link-color, #0d6efd);
+  --ns-danger: var(--bs-danger, #dc3545);
+  --ns-success: var(--bs-success, #198754);
+  --ns-badge: var(--bs-secondary, #6c757d);
+  --ns-warnbg: var(--bs-warning-bg-subtle, #fff3cd);
+  --ns-warntext: var(--bs-warning-text-emphasis, #664d03);
+  --ns-warnborder: #ffecb5;
+}
+
+body.dark-mode .peloton-ui,
+body[class*="config-ui-x-dark-mode"] .peloton-ui {
+  --ns-subtle: #262626;
+}
+
+/* The strips and banners set their own display, so the hidden attribute needs this to win. */
+.peloton-ui [hidden] {
+  display: none !important;
+}
+
+/* The muted line under the intro (12.6px secondary), on the lead paragraph rhythm. */
+.peloton-ui .ns-lead-note {
+  margin-top: 0;
+}
+
+/* The non-blocking reconnect banner: the warning colours of the shell's summary box, under the draft bar. */
+.peloton-ui .ns-reconnect-banner {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+/* Blocking section error (Polling) under the intro. */
+.ns-section-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ns-danger);
+  border-radius: 6px;
+  color: var(--ns-danger);
+}
+
+/* The radio row of Show in HomeKit as. */
+.ns-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+/* The 38px outlined button in the link colour: Open Peloton sign-in and the promoted Sign in with browser. */
+.peloton-ui .ns-outline {
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--ns-link);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ns-link);
+  font-size: 16px;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+.peloton-ui .ns-outline:not(:disabled):hover,
+.peloton-ui .ns-outline:not(:disabled):focus-visible {
+  background: rgba(128, 128, 128, 0.08);
+  border-color: var(--ns-link);
+  color: var(--ns-link);
+  box-shadow: none;
+}
+
+/* Cancel, the chooser's Cancel and the help toggle are text buttons in the secondary colour on both themes. */
+.peloton-ui .btn-link.ns-secondary {
+  --ns-text-button-color: var(--ns-secondary);
+  color: var(--ns-secondary);
+}
+
+/* Outlined detail badges (who, zone, accessory kind) and the warning badge, on the shell's badge geometry. */
+.peloton-ui .badge.ns-badge-outline {
+  padding: 2px 7px;
+  border: 1px solid var(--ns-border);
+  background: transparent;
+  color: var(--ns-secondary);
+}
+
+.peloton-ui .badge.ns-badge-warning {
+  padding: 2px 7px;
+  border: 1px solid var(--ns-warnborder);
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+}
+
+/* Trigger cards: the whole header row toggles the card (design/HANDOFF.md, card header). The badges and the
+   collapsed summary sit in the shell's title cluster, so at 400px they wrap under the name while the right cluster
+   (Hide help, Show settings or Done, the chevron) stays on the first row. */
+.peloton-ui .ns-card-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.peloton-ui .ns-card-badges {
+  display: contents;
+}
+
+.peloton-ui .ns-card-summary {
+  min-width: 0;
+}
+
+/* The chevron is the shell's (index.css): right-pointing at rest, turned to point down while collapsed and up while open. */
+.peloton-ui .ns-card-toggle .ns-chevron {
+  align-self: center;
+  margin: 0;
+  transform: translateY(-0.15em) rotate(45deg);
+}
+
+.peloton-ui .ns-card-toggle[aria-expanded="true"] .ns-chevron {
+  transform: translateY(0.15em) rotate(225deg);
+}
+
+.peloton-ui .ns-card-toggle:focus-visible {
+  outline: 2px solid var(--ns-link);
+  outline-offset: -2px;
+}
+
+.ns-warning-strip {
+  padding: 8px 16px;
+  background: var(--ns-warnbg);
+  color: var(--ns-warntext);
+  font-size: 12.6px;
+  border-bottom: 1px solid var(--ns-cardborder);
+}
+
+/* Account status pills. */
+.ns-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.ns-pill-connected { background: var(--ns-success); }
+.ns-pill-reconnect_needed { background: var(--ns-danger); }
+.ns-pill-not_connected { background: var(--ns-badge); }
+
+.ns-pill-checking {
+  border: 1px solid var(--ns-border);
+  color: var(--ns-secondary);
+  background: transparent;
+}
+
+/* The Checking pill spins: a Peloton exception to the shell's no-animation rule (SPEC section 10). */
+@keyframes ns-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ns-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 5px;
+  animation: ns-spin 0.8s linear infinite;
+}
+
+/* Account card: avatar, name block, status column; wraps at phone width. */
+.ns-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.ns-avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ns-locked);
+  color: inherit;
+  font-size: 14.4px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.ns-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ns-account-main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ns-account-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ns-account-name .ns-name {
+  font-weight: 600;
+}
+
+.ns-account-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ns-account-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 16px;
+}
+
+/* The per-account result line under the row after a failed Test or a connect. */
+.ns-account-result {
+  padding: 0 16px 12px;
+  font-size: 13.5px;
+}
+
+/* Below 600px the pill and links move under the name and wrap; the avatar stays. */
+@media (max-width: 599.98px) {
+  .ns-account-status {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    flex-basis: 100%;
+    padding-left: 52px;
+  }
+
+  .ns-account-links {
+    justify-content: flex-start;
+  }
+}
+
+/* Connect panel: inline under the card, subtle background, 1px top rule, 16px padding. */
+.ns-connect-panel {
+  padding: 16px;
+  border-top: 1px solid var(--ns-cardborder);
+  background: var(--ns-subtle);
+}
+
+.ns-connect-panel p {
+  margin: 12px 0 0;
+}
+
+.ns-connect-panel p + p {
+  margin-top: 8px;
+}
+
+.ns-connect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+/* The connect result box: 1px border and text in the tone colour. */
+.ns-result {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  border: 1px solid;
+}
+
+.ns-result-danger {
+  border-color: var(--ns-danger);
+  color: var(--ns-danger);
+}
+
+.ns-result-success {
+  border-color: var(--ns-success);
+  color: var(--ns-success);
+}
+
+/* The Add account panel for a profile not on the household list, and the first-run panel. */
+.peloton-ui .ns-standalone-panel {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.ns-first-run {
+  margin-bottom: 8px;
+}
+
+.ns-devices {
+  margin-top: 16px;
+}
+
+.ns-devices .ns-devices-suffix {
+  opacity: 0.75;
+}
+
+/* Activities chips: 31px tall, 16px radius; selected in the link colour, unselected outlined. */
+.ns-chips-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ns-chips-head .ns-chips-summary {
+  font-weight: 300;
+  color: var(--ns-secondary);
+}
+
+.ns-chips-links {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 12.6px;
+}
+
+.peloton-ui .ns-chips-links .btn-link {
+  font-size: 12.6px;
+}
+
+.ns-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.peloton-ui .ns-chip {
+  height: 31px;
+  padding: 0 12px;
+  border: 1px solid var(--ns-border);
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  font-size: 13.5px;
+  line-height: 1;
+}
+
+.peloton-ui .ns-chip[aria-pressed="true"] {
+  border-color: var(--ns-link);
+  background: var(--ns-link);
+  color: #fff;
+}
+
+.ns-note {
+  margin-bottom: 16px;
+}
+
+/* Add trigger chooser (the tiles are the shell's) and the row holding the section's Add button. */
+.ns-chooser {
+  margin-top: 12px;
+}
+
+.ns-chooser-prompt {
+  margin-bottom: 8px;
+}
+
+.ns-chooser-cancel {
+  margin-top: 12px;
+}
+
+.ns-add-trigger {
+  margin-top: 8px;
+}
+
+.ns-empty-line {
+  margin: 0 0 8px;
+}
+
+/* Polling callout: 1px border, 6px radius, subtle fill, the Dismiss link at the right. */
+.ns-callout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--ns-border);
+  border-radius: 6px;
+  background: var(--ns-subtle);
+}
+
+.ns-callout .ns-callout-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ns-callout .ns-callout-title {
+  margin-bottom: 4px;
+}
+
+.ns-callout .ns-help-link {
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.peloton-ui .ns-callout-dismiss {
+  flex: 0 0 auto;
+}
+
+/* The live estimate line closes the gap the standby field leaves under itself. */
+.ns-estimate {
+  margin: -8px 0 16px;
+}
+
+/* The footer glyph follows the text colour and the shell's 20px mark size. */
+.peloton-ui .ns-mark-svg {
+  width: 20px;
+  height: 20px;
+}

@@ -1,7 +1,36 @@
 /**
  * Every string the settings page shows, taken from design/README.md. Sentence case, no em dashes,
  * "sensor" for triggers and "switch" only for the Fast polling switch and the Switch accessory kind.
+ * The strings the shell shows the same way on every plugin (the draft bar, the summary box, the help
+ * toggle, "{Label} is required.") live in shell-copy.js.
  */
+
+/**
+ * The labels of the fields that must not be left empty, and of every field the trigger cards, Polling and
+ * Settings render. Each section renders its field with the label here and the validator builds the field's
+ * "{Label} is required." message from the same entry (shell rule W4, `required` in shell-copy.js), so the
+ * message always carries the field's own label verbatim; a field labelled Name reads "Name is required.",
+ * and the summary box entry repeats it after the card's name.
+ */
+export const FIELD_LABELS = {
+  name: 'Name',
+  accessory: 'Show in HomeKit as',
+  who: 'Who',
+  device: 'Device',
+  activities: 'Activities',
+  holdAfterEnd: 'Keep on after the workout ends (seconds)',
+  zone: 'Zone at or above',
+  holdTime: 'Hold time (seconds)',
+  fastSwitch: 'Create a Fast polling switch in HomeKit',
+  fastSwitchName: 'Name',
+  fastInterval: 'Fast (seconds)',
+  standbyInterval: 'Standby (seconds)',
+  debug: 'Debug logging',
+  autoOff: 'Fast polling switch turns off after (minutes)',
+  attention: 'Attention needed sensor',
+  checkIn: 'Daily check-in time',
+  restore: 'Restore from backup',
+};
 
 export const PAGE = {
   bannerAlt: 'Peloton. HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones.',
@@ -13,12 +42,6 @@ export const PAGE = {
     + 'and pick what should happen when a workout starts.',
   loadFailed: 'Could not load the configuration:',
   serverUnavailable: 'The plugin server did not answer. Reload the page and try again.',
-};
-
-export const DRAFT = {
-  message: 'You have unsaved changes from earlier. Restore them?',
-  restore: 'Restore',
-  discard: 'Discard',
 };
 
 export const RECONNECT_BANNER = {
@@ -122,26 +145,30 @@ export const TRIGGERS = {
   accessoryBadge: { occupancy: 'Occupancy sensor', switch: 'Switch' },
   notConnectedBadge: 'Not connected',
   notConnectedStrip: 'This member has not connected yet. The sensor stays off until they do.',
-  showHelp: 'Show help',
-  hideHelp: 'Hide help',
-  edit: 'Edit',
+  /** The header link that opens and closes a card (shell card header rules, design/HANDOFF.md). */
+  showSettings: 'Show settings',
   done: 'Done',
-  name: 'Name',
+  /** The muted summary after the badges while a card is collapsed: "Anyone · Any device · All activities · Keep on 90 s". */
+  summarySeparator: ' \u00b7 ',
+  activitiesOf: (n, total) => `${n} of ${total} activities`,
+  keepOn: (seconds) => `Keep on ${seconds} s`,
+  hold: (seconds) => `Hold ${seconds} s`,
+  name: FIELD_LABELS.name,
   nameHelp: 'Shown in the Home app. Letters, numbers, spaces and apostrophes.',
-  accessory: 'Show in HomeKit as',
+  accessory: FIELD_LABELS.accessory,
   accessoryOptions: { occupancy: 'Occupancy sensor', switch: 'Switch' },
   accessoryHelp: {
     workout: 'Occupancy sensor is on while the workout is in progress. Switch behaves the same but appears as a toggle.',
     hrZone: 'Occupancy sensor is on while heart rate is at or above the zone. Switch behaves the same but appears as a toggle.',
   },
-  who: 'Who',
+  who: FIELD_LABELS.who,
   whoAnyone: 'Anyone on this membership',
   whoChoose: 'Choose a member',
   whoHelp: 'Zones come from this member\'s Peloton profile.',
-  device: 'Device',
+  device: FIELD_LABELS.device,
   deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread' },
   deviceHelp: 'Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+.',
-  activities: 'Activities',
+  activities: FIELD_LABELS.activities,
   activityLabels: {
     cycling: 'Cycling', running: 'Running', walking: 'Walking', rowing: 'Rowing', strength: 'Strength', yoga: 'Yoga',
     stretching: 'Stretching', meditation: 'Meditation', cardio: 'Cardio', bike_bootcamp: 'Bike bootcamp',
@@ -151,10 +178,10 @@ export const TRIGGERS = {
   activitiesSelected: (n, total) => `${n} of ${total} selected`,
   selectAll: 'Select all',
   selectNone: 'none',
-  holdAfterEnd: 'Keep on after the workout ends (seconds)',
+  holdAfterEnd: FIELD_LABELS.holdAfterEnd,
   holdAfterEndHelp: 'Holds the sensor on briefly so stacked classes do not turn your scene off between them.',
-  zone: 'Zone at or above',
-  holdTime: 'Hold time (seconds)',
+  zone: FIELD_LABELS.zone,
+  holdTime: FIELD_LABELS.holdTime,
   holdTimeHelp: 'The zone must hold this long before the sensor changes, so lights do not flicker on a sprint.',
   hrNote: 'Needs a heart-rate monitor paired to the workout. Without one the sensor stays off.',
   remove: 'Remove trigger',
@@ -166,15 +193,15 @@ export const TRIGGERS = {
 
 export const POLLING = {
   intro: 'How often the plugin asks Peloton what is happening.',
-  fastSwitch: 'Create a Fast polling switch in HomeKit',
+  fastSwitch: FIELD_LABELS.fastSwitch,
   fastSwitchHelp: 'Turn this switch on from a HomeKit automation right before a workout, for example when the gym light comes on. '
     + 'While it is on, the plugin checks every account quickly, locks onto the first workout it sees, and follows it to the end. '
     + 'Turn it off when the light goes off.',
-  fastSwitchName: 'Name',
+  fastSwitchName: FIELD_LABELS.fastSwitchName,
   fastSwitchNameHelp: 'Turns itself off automatically after the period set under Advanced.',
-  fast: 'Fast (seconds)',
+  fast: FIELD_LABELS.fastInterval,
   fastHelp: 'While the switch is on or a workout is in progress.',
-  standby: 'Standby (seconds)',
+  standby: FIELD_LABELS.standbyInterval,
   standbyHelp: 'When the switch is off. Set to 0 to stop polling entirely until the switch turns on.',
   estimate: (perHour, n) => `About ${perHour} requests per hour in standby with ${n} account${n === 1 ? '' : 's'}.`,
   estimateNone: 'No polling in standby. Checking starts when the fast polling switch turns on.',
@@ -189,19 +216,19 @@ export const POLLING = {
 
 export const SETTINGS = {
   intro: 'Options that apply to the whole plugin.',
-  name: 'Name',
+  name: FIELD_LABELS.name,
   nameHelp: 'Shown in Homebridge logs and as the bridge name in the Home app.',
-  debug: 'Debug logging',
+  debug: FIELD_LABELS.debug,
   debugHelp: 'Log every poll and the workout data it returns. Sign-in details and session tokens are never logged.',
   advanced: 'Advanced',
-  autoOff: 'Fast polling switch turns off after (minutes)',
+  autoOff: FIELD_LABELS.autoOff,
   autoOffHelp: 'Counted from the later of the switch turning on and the last workout ending.',
-  attention: 'Attention needed sensor',
+  attention: FIELD_LABELS.attention,
   attentionHelp: 'Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification.',
-  checkIn: 'Daily check-in time',
+  checkIn: FIELD_LABELS.checkIn,
   checkInHelp: 'Once a day the plugin refreshes each account\'s session and heart-rate zones, even when nobody is working out.',
-  restore: 'Restore from backup',
-  restoreHelp: 'Replaces everything on this page with the contents of the backup.',
+  restore: FIELD_LABELS.restore,
+  restoreHelp: 'Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled.',
   restoreFailed: 'The backup could not be loaded:',
   restoreNotJson: 'The file is not valid JSON.',
   restoreNotPeloton: 'The file does not hold a Peloton platform block.',
@@ -209,15 +236,9 @@ export const SETTINGS = {
   restored: 'Backup loaded. Review the page, then click Save.',
 };
 
+/** Validation messages for a value that is filled in; an empty required field reads "{Label} is required." (shell-copy.js). */
 export const VALIDATION = {
-  heading: 'Fix these before saving:',
-  count: (n) => `${n} field${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} attention`,
-  showAll: 'Show all',
-  hide: 'Hide',
-  collapseAfter: 3,
-  nothingToSave: 'Nothing to save yet',
   finishNew: 'Finish the new trigger before saving.',
-  triggerName: 'Give this trigger a name. It is what you will see in the Home app.',
   duplicateName: 'Another trigger already uses this name.',
   whoMissing: 'Choose the member whose heart rate this sensor follows.',
   fastFloor: 'Fast polling cannot go below 5 seconds.',
@@ -225,7 +246,6 @@ export const VALIDATION = {
   secondsFloor: 'Enter a number of seconds, 0 or more.',
   minutesFloor: 'Enter a number of minutes, 1 or more.',
   timeFormat: 'Enter a time as HH:MM.',
-  nameRequired: 'Name is required.',
   labels: { polling: 'Polling', settings: 'Settings' },
 };
 
