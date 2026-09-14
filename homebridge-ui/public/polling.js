@@ -1,16 +1,33 @@
 /**
  * The Polling section (design/README.md, Polling): the Fast polling switch block, the two intervals
  * with the live estimate line, the dismissible automation callout, and the blocking section error.
+ * Polling renders uncarded on the page grid, a Peloton exception to the shell's rule R5 (SPEC section 10).
  */
 
 import { POLLING } from './copy.js';
-import { checkboxField, el, numberField, textField } from './dom.js';
+import { checkboxField, el, gridCell, grid, linkButton, numberField, paragraph, textField } from './dom.js';
 import { DEFAULTS, pollingConflict } from './model.js';
 
-/** Accounts the estimate counts: the connected ones, else the configured ones, else one. */
-function accountCount(app) {
-  const connected = (app.status?.accounts ?? []).filter((account) => account.state === 'connected').length;
-  return connected > 0 ? connected : Math.max(1, app.config.accounts.length);
+/**
+ * Accounts the estimate counts: the connected ones and those with a request in flight (the Checking pill),
+ * else the configured ones, else one.
+ */
+export function estimateAccounts(app) {
+  const summaries = app.status?.accounts ?? [];
+  const counted = new Set();
+  for (const summary of summaries) {
+    if (summary.state === 'connected') {
+      counted.add(summary.id);
+    }
+  }
+  for (const key of app.accountsUi?.checking ?? []) {
+    counted.add(key);
+  }
+  const panel = app.accountsUi?.panel;
+  if (panel?.busy) {
+    counted.add(panel.key);
+  }
+  return counted.size > 0 ? counted.size : Math.max(1, app.config.accounts.length);
 }
 
 export function estimateLine(app) {
@@ -18,14 +35,16 @@ export function estimateLine(app) {
   if (!Number.isFinite(standby) || standby <= 0) {
     return POLLING.estimateNone;
   }
-  return POLLING.estimate(Math.round((3600 / standby) * accountCount(app)), accountCount(app));
+  const n = estimateAccounts(app);
+  return POLLING.estimate(Math.round((3600 / standby) * n), n);
 }
 
 export function renderPolling(app, container) {
   const c = app.config.polling;
-  container.appendChild(el('p', { class: 'ns-section-copy' }, POLLING.intro));
+  container.appendChild(paragraph(POLLING.intro));
   const sectionError = el('div', { class: 'ns-section-error', role: 'alert', hidden: !pollingConflict(app.config) }, POLLING.conflict);
   container.appendChild(sectionError);
+  // A live status line, not field help: it does not carry ns-help.
   const estimate = el('div', { class: 'form-text ns-estimate' }, estimateLine(app));
   const change = () => {
     sectionError.hidden = !pollingConflict(app.config);
@@ -33,46 +52,41 @@ export function renderPolling(app, container) {
     app.changed();
   };
 
-  const nameField = textField(POLLING.fastSwitchName, c.fastSwitchName, (value) => {
-    c.fastSwitchName = value;
-    change();
-  }, { path: 'polling.fastSwitchName', help: POLLING.fastSwitchNameHelp });
-  nameField.hidden = !c.fastSwitch;
-
-  const grid = el('div', { class: 'ns-grid' },
-    checkboxField(POLLING.fastSwitch, c.fastSwitch, (value) => {
+  container.appendChild(grid(
+    gridCell(12, checkboxField(POLLING.fastSwitch, c.fastSwitch, (value) => {
       c.fastSwitch = value;
-      nameField.hidden = !value;
       change();
-    }, { path: 'polling.fastSwitch', help: POLLING.fastSwitchHelp }),
-    nameField,
-    el('div', { class: 'ns-span-6' }, numberField(POLLING.fast, c.fastInterval, (value) => {
+    }, { path: 'polling.fastSwitch', help: POLLING.fastSwitchHelp })),
+    // The switch's Name is always shown, whether or not the switch is created.
+    gridCell(12, textField(POLLING.fastSwitchName, c.fastSwitchName, (value) => {
+      c.fastSwitchName = value;
+      change();
+    }, { path: 'polling.fastSwitchName', help: POLLING.fastSwitchNameHelp })),
+    gridCell(6, numberField(POLLING.fast, c.fastInterval, (value) => {
       c.fastInterval = value;
       change();
     }, { path: 'polling.fastInterval', min: DEFAULTS.fastIntervalFloor, help: POLLING.fastHelp })),
-    el('div', { class: 'ns-span-6' }, numberField(POLLING.standby, c.standbyInterval, (value) => {
+    gridCell(6, numberField(POLLING.standby, c.standbyInterval, (value) => {
       c.standbyInterval = value;
       change();
     }, { path: 'polling.standbyInterval', min: 0, help: POLLING.standbyHelp })),
-    estimate,
-  );
-  container.appendChild(grid);
+    gridCell(12, estimate),
+  ));
 
   if (!c.calloutDismissed) {
-    const dismiss = el('button', { type: 'button', class: 'btn ns-dismiss', 'aria-label': POLLING.calloutDismiss }, '✕');
     const callout = el('div', { class: 'ns-callout', role: 'note' },
       el('div', { class: 'ns-callout-body' },
-        el('div', { class: 'ns-callout-title' }, POLLING.calloutTitle),
+        el('div', { class: 'fw-semibold ns-callout-title' }, POLLING.calloutTitle),
         el('div', {}, POLLING.calloutBody),
-        el('a', { href: POLLING.calloutLinkUrl, target: '_blank', rel: 'noopener noreferrer' }, POLLING.calloutLink),
+        el('a', { class: 'ns-help-link', href: POLLING.calloutLinkUrl, target: '_blank', rel: 'noopener noreferrer' }, POLLING.calloutLink),
       ),
-      dismiss,
+      // Dismiss is a text link (shell rule W1: no glyphs); the dismissal is saved with the configuration.
+      linkButton(POLLING.calloutDismiss, () => {
+        c.calloutDismissed = true;
+        callout.remove();
+        app.changed();
+      }, 'ns-callout-dismiss'),
     );
-    dismiss.addEventListener('click', () => {
-      c.calloutDismissed = true;
-      callout.remove();
-      app.changed();
-    });
     container.appendChild(callout);
   }
 }
