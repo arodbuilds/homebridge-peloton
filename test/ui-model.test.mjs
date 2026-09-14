@@ -3,11 +3,12 @@ import { webcrypto } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
-import { STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
+import { FIELD_LABELS, STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, defaultTriggerName, deviceLabel, devicesText, duplicateTrigger, exportConfig, isFreshConfig, mergeConnectedAccount, newId,
-  newTrigger, readConfig, removeAccountEntry, validate,
+  ACTIVITIES, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, devicesText, duplicateTrigger, exportConfig, findForbiddenKey,
+  isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
+import { required } from '../homebridge-ui/public/shell-copy.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -148,9 +149,8 @@ describe('validation', () => {
   }
 
   it('finds the design README cases', () => {
-    assert.deepEqual(issuesFor({ triggers: [{ id: 't1', type: 'workout', name: '' }] }), [
-      'New trigger: Give this trigger a name. It is what you will see in the Home app.',
-    ]);
+    // An empty required field names itself from the label table (shell rule W4): "Name is required."
+    assert.deepEqual(issuesFor({ triggers: [{ id: 't1', type: 'workout', name: '' }] }), ['New trigger: Name is required.']);
     assert.deepEqual(issuesFor({ triggers: [{ id: 't1', type: 'workout', name: 'Ride' }, { id: 't2', type: 'workout', name: 'ride ' }] }), [
       'Ride: Another trigger already uses this name.',
       'ride: Another trigger already uses this name.',
@@ -169,6 +169,15 @@ describe('validation', () => {
     assert.deepEqual(issuesFor({}), []);
   });
 
+  it('builds every "is required." message from the label table', () => {
+    assert.equal(required(FIELD_LABELS.name), 'Name is required.');
+    assert.equal(required(FIELD_LABELS.autoOff), 'Fast polling switch turns off after (minutes) is required.');
+    assert.deepEqual(issuesFor({ name: '', triggers: [{ id: 't1', type: 'workout', name: ' ' }] }), [
+      'New trigger: Name is required.',
+      'Settings: Name is required.',
+    ]);
+  });
+
   it('knows a fresh install from a configured one', () => {
     assert.equal(isFreshConfig(readConfig({})), true);
     assert.equal(isFreshConfig(readConfig({ polling: { standbyInterval: 60 } })), false);
@@ -177,6 +186,15 @@ describe('validation', () => {
 });
 
 describe('restore from backup', () => {
+  it('strips passwords from a block without touching it, and finds a key that could reach a prototype', () => {
+    const block = { platform: 'Peloton', accounts: [{ id: 'a1', email: 'a@example.com', password: 'x' }, { id: 'a2', email: 'b@example.com' }] };
+    assert.deepEqual(blockWithoutPasswords(block).accounts, [{ id: 'a1', email: 'a@example.com' }, { id: 'a2', email: 'b@example.com' }]);
+    assert.equal(block.accounts[0].password, 'x');
+    assert.equal(findForbiddenKey({ a: [{ b: { __proto__: null, constructor: 1 } }] }), 'constructor');
+    assert.equal(findForbiddenKey(JSON.parse('{"triggers":[{"__proto__":{}}]}')), '__proto__');
+    assert.equal(findForbiddenKey({ platform: 'Peloton', accounts: [] }), undefined);
+  });
+
   it('finds the platform block on its own, in a config.json, or in a draft', () => {
     const block = { platform: 'Peloton', name: 'Peloton' };
     assert.deepEqual(backupBlock(block), block);

@@ -1,7 +1,15 @@
 /**
- * Small DOM helpers. The page is plain HTML built with these; Bootstrap classes come from the
- * stylesheet the Homebridge UI injects into the settings iframe, and the ns-* classes from index.css.
+ * Tiny DOM helpers. The UI is plain HTML built with these; Bootstrap 5 classes come from the
+ * Homebridge UI, which injects its stylesheet and theme into the settings iframe.
+ *
+ * Shell file: homebridge-notify-switch v1.3.2 homebridge-ui/src/dom.ts, function by function and in
+ * the same order, with the TypeScript types removed (the Peloton page is served as plain ES modules
+ * with no build step). The Telegram, QR, modal and clipboard helpers that only Notify Switch uses
+ * (openModal, copyText, copyButton) are left out; nothing else is changed. The two copy tables the
+ * shell reads (GET_STARTED, RESULT_BAR) come from shell-copy.js.
  */
+
+import { GET_STARTED, RESULT_BAR } from './shell-copy.js';
 
 export function append(parent, ...children) {
   for (const child of children) {
@@ -15,15 +23,17 @@ export function append(parent, ...children) {
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
-    if (value === undefined || value === false || value === null) {
+    if (value === undefined || value === false) {
       continue;
     }
     if (key === 'class') {
       node.className = String(value);
+    } else if (key === 'text') {
+      node.textContent = String(value);
     } else if (value === true) {
       node.setAttribute(key, '');
     } else {
-      node.setAttribute(key, String(value));
+      node.setAttribute(key, value);
     }
   }
   append(node, ...children);
@@ -42,72 +52,96 @@ export function uniqueId(prefix = 'f') {
   return `${prefix}-${idCounter}`;
 }
 
-/** One line of field help at 12.6 px in the secondary colour. Carries ns-help so a card's Show help toggle can hide it. */
-export function helpText(text, extra = '') {
-  return el('div', { class: `form-text ns-help${extra ? ` ${extra}` : ''}` }, text);
+/** An outlined link that opens in a new tab, styled as a button. */
+export function linkOut(label, href, cls = 'btn btn-outline-primary btn-sm') {
+  return el('a', { class: cls, href, target: '_blank', rel: 'noopener noreferrer', role: 'button' }, label);
 }
 
-function wrapField(id, label, control, opts) {
+/** A plain link to the README that opens in a new tab. */
+export function helpLink(link) {
+  return el('a', { class: 'ns-help-link', href: link.href, target: '_blank', rel: 'noopener noreferrer' }, link.text);
+}
+
+/**
+ * One line of field help: a sentence and, optionally, a README link. Carries `ns-help` so the card's
+ * "Show help" toggle can collapse it; status lines and counters do not carry the class and stay visible.
+ */
+export function helpText(text, link, extra = '') {
+  return el('div', { class: `form-text ns-help${extra ? ` ${extra}` : ''}` }, text, link ? ' ' : null, link ? helpLink(link) : null);
+}
+
+function wrapField(id, label, control, opts, invalidTarget) {
   const star = opts.required ? el('span', { class: 'text-danger ms-1', 'aria-hidden': 'true' }, '*') : null;
-  return el('div', { class: 'ns-field', 'data-path': opts.path },
-    el('label', { class: 'form-label', for: id }, label, star),
-    el('div', { class: 'ns-control' }, control),
-    opts.help ? helpText(opts.help) : null,
+  const labelNode = el('label', { class: 'form-label', for: id }, label, star);
+  return el('div', { class: 'mb-3', 'data-path': opts.path, 'data-invalid-target': invalidTarget ? 'group' : undefined },
+    opts.labelExtra ? el('div', { class: 'ns-label-row' }, labelNode, opts.labelExtra) : labelNode,
+    control,
+    opts.help ? helpText(opts.help, opts.helpLink) : null,
     el('div', { class: 'invalid-feedback' }),
   );
 }
 
-/** A labelled text input calling onChange with the new string on every input event. */
+/**
+ * A collapsed disclosure ("Advanced", "Common settings"). The summary is secondary text in the theme's
+ * colour so it stays readable in dark mode (SPEC section 11.2, item 18).
+ */
+export function disclosure(summary, body, opts = {}) {
+  const details = el('details', { class: `ns-advanced${opts.cls ? ` ${opts.cls}` : ''}`, ...(opts.attrs ?? {}) },
+    el('summary', { class: 'ns-secondary small' }, summary),
+    el('div', { class: 'mt-2' }, ...body),
+  );
+  if (opts.open) {
+    details.open = true;
+  }
+  return details;
+}
+
+/** A labelled input with optional help text, calling `onChange` with the new string on every input event. */
 export function textField(label, value, onChange, opts = {}) {
   const id = uniqueId();
   const input = el('input', {
-    id, class: `form-control${opts.monospace ? ' font-monospace' : ''}`, type: opts.type ?? 'text', placeholder: opts.placeholder,
-    autocomplete: opts.autocomplete ?? 'off', spellcheck: 'false', inputmode: opts.inputmode,
+    id,
+    class: `form-control${opts.monospace ? ' font-monospace' : ''}`,
+    type: opts.type ?? 'text',
+    value,
+    placeholder: opts.placeholder,
+    autocomplete: opts.autocomplete ?? 'off',
+    inputmode: opts.inputmode,
+    spellcheck: 'false',
   });
-  input.value = value;
   input.addEventListener('input', () => onChange(input.value));
   return wrapField(id, label, input, opts);
 }
 
-/** A number input; onChange receives the parsed number or NaN when the box is empty or not a number. */
+/** A number input; `onChange` receives the parsed integer or NaN. */
 export function numberField(label, value, onChange, opts = {}) {
   const id = uniqueId();
   const input = el('input', {
-    id, class: 'form-control', type: 'number', inputmode: 'numeric', step: '1',
-    min: opts.min !== undefined ? String(opts.min) : undefined, max: opts.max !== undefined ? String(opts.max) : undefined,
+    id, class: 'form-control', type: 'number', value: String(value), inputmode: 'numeric',
+    min: opts.min !== undefined ? String(opts.min) : undefined, max: opts.max !== undefined ? String(opts.max) : undefined, step: '1',
   });
-  input.value = Number.isFinite(value) ? String(value) : '';
   input.addEventListener('input', () => onChange(input.value.trim() === '' ? Number.NaN : Number(input.value)));
   return wrapField(id, label, input, opts);
 }
 
-/** A time input for HH:MM. */
-export function timeField(label, value, onChange, opts = {}) {
-  const id = uniqueId();
-  const input = el('input', { id, class: 'form-control', type: 'time', step: '60' });
-  input.value = value;
-  input.addEventListener('input', () => onChange(input.value));
-  return wrapField(id, label, input, opts);
-}
-
 /**
- * A password input with the Show / Hide toggle attached on the right. autocomplete is new-password
- * because browsers ignore off on password inputs and would offer the saved Homebridge login.
+ * A password input with a Show/Hide toggle. The value is never echoed anywhere but the input itself.
+ * `autocomplete` is `new-password` because browsers ignore `off` on password inputs and would offer the
+ * saved Homebridge login, silently replacing a pasted secret. The toggle only flips `type`; the value is untouched.
  */
-export function passwordField(label, onChange, opts = {}) {
+export function passwordField(label, value, onChange, opts = {}) {
   const id = uniqueId();
-  const input = el('input', { id, class: 'form-control', type: 'password', autocomplete: 'new-password', spellcheck: 'false' });
+  const input = el('input', { id, class: 'form-control font-monospace', type: 'password', value, autocomplete: 'new-password', spellcheck: 'false' });
   input.addEventListener('input', () => onChange(input.value));
-  const toggle = el('button', { class: 'btn btn-outline-secondary ns-reveal', type: 'button', 'aria-label': `${opts.showLabel} ${label}` }, opts.showLabel);
+  const toggle = el('button', { class: 'btn btn-outline-secondary', type: 'button', 'aria-label': `Show ${label}` }, 'Show');
   toggle.addEventListener('click', () => {
     const reveal = input.type === 'password';
     input.type = reveal ? 'text' : 'password';
-    toggle.textContent = reveal ? opts.hideLabel : opts.showLabel;
-    toggle.setAttribute('aria-label', `${reveal ? opts.hideLabel : opts.showLabel} ${label}`);
+    toggle.textContent = reveal ? 'Hide' : 'Show';
+    toggle.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} ${label}`);
   });
-  const field = wrapField(id, label, el('div', { class: 'input-group' }, input, toggle), opts);
-  field.nsInput = input;
-  return field;
+  const group = el('div', { class: 'input-group' }, input, toggle);
+  return wrapField(id, label, group, opts, input);
 }
 
 export function selectField(label, value, options, onChange, opts = {}) {
@@ -129,84 +163,124 @@ export function checkboxField(label, checked, onChange, opts = {}) {
   const input = el('input', { id, class: 'form-check-input', type: 'checkbox' });
   input.checked = checked;
   input.addEventListener('change', () => onChange(input.checked));
-  return el('div', { class: 'form-check ns-field ns-check', 'data-path': opts.path },
+  const wrapper = el('div', { class: 'form-check mb-3', 'data-path': opts.path },
     input,
     el('label', { class: 'form-check-label', for: id }, label),
-    opts.help ? helpText(opts.help) : null,
+    opts.help ? helpText(opts.help, opts.helpLink) : null,
     el('div', { class: 'invalid-feedback' }),
   );
+  return wrapper;
 }
 
-/** A labelled row of radio buttons; options are { value, label }. */
-export function radioField(label, value, options, onChange, opts = {}) {
-  const name = uniqueId('r');
-  const row = el('div', { class: 'ns-radios' });
-  for (const option of options) {
-    const id = uniqueId();
-    const input = el('input', { id, class: 'form-check-input', type: 'radio', name, value: option.value });
-    input.checked = option.value === value;
-    input.addEventListener('change', () => {
-      if (input.checked) {
-        onChange(option.value);
-      }
-    });
-    row.appendChild(el('div', { class: 'form-check form-check-inline' }, input, el('label', { class: 'form-check-label', for: id }, option.label)));
-  }
-  return el('div', { class: 'ns-field', 'data-path': opts.path },
-    el('div', { class: 'form-label' }, label),
-    row,
-    opts.help ? helpText(opts.help) : null,
-    el('div', { class: 'invalid-feedback' }),
-  );
+export function textareaField(label, value, onChange, opts = {}) {
+  const id = uniqueId();
+  const input = el('textarea', { id, class: 'form-control', rows: String(opts.rows ?? 3), placeholder: opts.placeholder });
+  input.value = value;
+  input.addEventListener('input', () => onChange(input.value));
+  return wrapField(id, label, input, opts);
 }
 
-export function button(label, onClick, cls = 'btn btn-outline-secondary btn-sm') {
+export function button(label, onClick, cls = 'btn btn-outline-primary btn-sm') {
   const node = el('button', { type: 'button', class: cls }, label);
   node.addEventListener('click', onClick);
   return node;
 }
 
-/** A text button in the link colour: the account card links, Cancel, Duplicate trigger, the Edit / Done toggle. */
+export function paragraph(text, cls = 'section-copy') {
+  return el('p', { class: cls }, text);
+}
+
+/** The classes of a section's Add button (SPEC section 11.2, item 28): 38px primary, or outlined secondary while gated. */
+export function sectionAddClass(enabled) {
+  return enabled ? 'btn btn-primary ns-section-add' : 'btn btn-outline-secondary ns-section-add';
+}
+
+/**
+ * A section's Add button (Add group, Add switch): the one 38px primary button of a section (SPEC section 11.2,
+ * item 28). While no provider exists it is disabled, drawn as an outlined button so it reads as disabled on
+ * every theme, with the "Add a provider first." hint beside it (item 19).
+ */
+export function addButton(label, onClick, enabled) {
+  const node = button(label, onClick, sectionAddClass(enabled));
+  if (enabled) {
+    return node;
+  }
+  node.disabled = true;
+  node.title = GET_STARTED.addProviderFirst;
+  return el('div', { class: 'ns-add-row' }, node, el('span', { class: 'form-text ns-add-hint' }, GET_STARTED.addProviderFirst));
+}
+
+/** A cell of the 12-column grid (SPEC section 11.2, item 28): `span` columns wide, full width below 600px. */
+export function gridCell(span, ...children) {
+  return el('div', { class: `ns-span-${span}` }, ...children);
+}
+
+/** The 12-column grid with its 8px column gap; `cells` come from `gridCell`. */
+export function grid(...cells) {
+  return el('div', { class: 'ns-grid' }, ...cells);
+}
+
+
+/** Inline status line under a button: `kind` picks the Bootstrap alert colour. */
+export function statusBox() {
+  const box = el('div', { class: 'status-box', role: 'status' });
+  return {
+    el: box,
+    set(kind, message, detail) {
+      clear(box);
+      box.className = 'status-box';
+      if (kind === 'none') {
+        return;
+      }
+      box.className = `status-box alert alert-${kind} py-2 px-3 mb-0`;
+      append(box, el('div', {}, message), detail ?? null);
+    },
+  };
+}
+
+/** A link-style (text) button: no border or background, used for secondary actions such as Cancel and Dismiss. */
 export function linkButton(label, onClick, extra = '') {
   return button(label, onClick, `btn btn-link btn-sm p-0 ns-link-button${extra ? ` ${extra}` : ''}`);
 }
 
-/** A red text button: Remove only. */
-export function dangerLinkButton(label, onClick, extra = '') {
-  return linkButton(label, onClick, `text-danger${extra ? ` ${extra}` : ''}`);
+/**
+ * The result bar of a card (SPEC section 11.2, item 28): between the body and the footer strip, holding a Test
+ * connection or Test send result until its Dismiss link is used. Empty, it takes no space.
+ */
+export function resultBar() {
+  const bar = el('div', { class: 'ns-card-results' });
+  return {
+    el: bar,
+    show(...content) {
+      clear(bar);
+      append(bar, ...content, linkButton(RESULT_BAR.dismiss, () => clear(bar), 'ns-result-dismiss'));
+    },
+    clear: () => clear(bar),
+  };
 }
 
-/** The one primary button per section (Add trigger) and the Connect button in the connect panel. */
-export function primaryButton(label, onClick, extra = '') {
-  return button(label, onClick, `btn btn-primary ns-primary${extra ? ` ${extra}` : ''}`);
+/** An outlined secondary button: every "Add …" control and Cancel in the chooser (SPEC section 11.2, item 11). */
+export function outlineButton(label, onClick, extra = '') {
+  return button(label, onClick, `btn btn-outline-secondary btn-sm${extra ? ` ${extra}` : ''}`);
 }
 
-/** An outlined button in the link colour: Open Peloton sign-in and the promoted Sign in with browser. */
-export function outlineLinkButton(label, onClick, extra = '') {
-  return button(label, onClick, `btn btn-outline-primary ns-outline${extra ? ` ${extra}` : ''}`);
-}
-
-/** A filled type badge, an outlined detail badge, or the warning badge. */
-export function badge(text, kind = 'filled') {
-  return el('span', { class: `ns-badge ns-badge-${kind}` }, text);
-}
-
-/** The account status pill: connected, reconnect_needed, not_connected, or checking (outlined with a spinner). */
-export function pill(state, text) {
-  const node = el('span', { class: `ns-pill ns-pill-${state}` });
-  if (state === 'checking') {
-    node.appendChild(el('span', { class: 'ns-spinner', 'aria-hidden': 'true' }));
+/** Replaces the sentence and link of a field's help line (the SMTP password help follows the chosen mail provider). */
+export function setHelp(field, text, link) {
+  const help = field.querySelector(':scope > .ns-help');
+  if (!help) {
+    return;
   }
-  node.appendChild(document.createTextNode(text));
-  return node;
+  clear(help);
+  append(help, text, link ? ' ' : null, link ? helpLink(link) : null);
 }
 
 /**
- * In-place confirmation: clicking start replaces it with the question, a confirm button and a text
- * Cancel. Escape or Cancel restores the original button.
+ * In-place confirmation (SPEC section 11.2, item 11): clicking `start` replaces it with the question, a
+ * confirm button and a text Cancel button. Escape or Cancel restores the original button. Shared by Test
+ * send and the three Remove buttons so they behave the same way.
  */
 export function inlineConfirm(opts) {
-  const control = el('span', { class: `ns-inline-confirm${opts.cls ? ` ${opts.cls}` : ''}` });
+  const control = el('span', { class: `d-inline-flex flex-wrap align-items-center gap-2 ns-inline-confirm${opts.cls ? ` ${opts.cls}` : ''}` });
   let onKey = () => undefined;
   const reset = () => {
     document.removeEventListener('keydown', onKey);
@@ -221,7 +295,7 @@ export function inlineConfirm(opts) {
   };
   opts.start.addEventListener('click', () => {
     clear(control);
-    control.appendChild(el('span', { class: 'ns-confirm-question' }, opts.question()));
+    control.appendChild(el('span', { class: 'small ns-confirm-question' }, opts.question()));
     const confirm = button(opts.confirmLabel, () => {
       reset();
       opts.onConfirm();
@@ -235,52 +309,28 @@ export function inlineConfirm(opts) {
   return control;
 }
 
-/** Initials for the avatar disc: the first letters of the first two words of the name, or of the username. */
-export function initialsOf(displayName, username) {
-  const source = (displayName ?? '').trim() || (username ?? '').trim();
-  const words = source.split(/\s+/).filter((word) => word.length > 0);
-  if (words.length === 0) {
-    return '?';
-  }
-  return words.slice(0, 2).map((word) => word[0].toUpperCase()).join('');
+/** A red text button: Remove and Reset only (SPEC section 11.3). `ns-danger-link` keeps it red under the host's dark marker (item 28). */
+export function dangerLinkButton(label, onClick) {
+  return linkButton(label, onClick, 'text-danger ns-danger-link');
 }
 
-/** "just now", "5 min ago", "3 hours ago", "yesterday", "3 days ago", "2 weeks ago", "4 months ago". */
-export function relativeTime(then, now = Date.now()) {
-  const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 60) {
-    return 'just now';
-  }
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes} min ago`;
-  }
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) {
-    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  }
-  const days = Math.round(hours / 24);
-  if (days === 1) {
-    return 'yesterday';
-  }
-  if (days < 14) {
-    return `${days} days ago`;
-  }
-  const weeks = Math.round(days / 7);
-  if (weeks < 9) {
-    return `${weeks} weeks ago`;
-  }
-  const months = Math.round(days / 30);
-  if (months < 12) {
-    return `${months} months ago`;
-  }
-  const years = Math.round(days / 365);
-  return `${years} year${years === 1 ? '' : 's'} ago`;
+/**
+ * Card footer strip (SPEC section 11.2, items 11 and 28): the red text button on the left (with the Duplicate text
+ * button beside it on switch and group cards), at most one outlined primary action on the right. `right` may be
+ * empty. The primary side comes first in the markup and the stylesheet reverses the row, so when the footer wraps
+ * on a phone the primary action stays on top.
+ */
+export function cardFooter(left, right) {
+  return el('div', { class: 'card-footer ns-card-footer' },
+    el('div', { class: 'ns-footer-right' }, right),
+    el('div', { class: 'ns-footer-left' }, ...(Array.isArray(left) ? left : [left])),
+  );
 }
 
-/** Fires an input event as typing would, so a field's own handler runs. */
-export function focusField(node) {
-  const control = [...node.querySelectorAll('input, select, textarea, button')].find((candidate) => !candidate.disabled);
-  control?.focus({ preventScroll: true });
-  return control;
+/**
+ * The footer's primary action (Test connection, Test send): an outlined, link-coloured 31px button
+ * (SPEC section 11.2, item 28).
+ */
+export function footerAction(label, onClick) {
+  return button(label, onClick ?? (() => undefined), 'btn btn-outline-primary btn-sm ns-footer-action');
 }

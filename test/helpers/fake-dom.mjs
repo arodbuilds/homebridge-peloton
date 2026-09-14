@@ -18,6 +18,14 @@ class FakeText {
   get textContent() {
     return this.data;
   }
+
+  get nodeValue() {
+    return this.data;
+  }
+
+  set nodeValue(value) {
+    this.data = String(value);
+  }
 }
 
 const SIMPLE = /^([a-zA-Z*][\w-]*)?((?:[.#][\w-]+|\[[\w-]+(?:[$^*]?=(?:"[^"]*"|[^\]]*))?\])*)$/;
@@ -105,6 +113,7 @@ export class FakeElement {
     this.selected = false;
     this.disabled = false;
     this.open = false;
+    this.files = [];
   }
 
   get children() {
@@ -113,6 +122,18 @@ export class FakeElement {
 
   get firstChild() {
     return this.childNodes[0] ?? null;
+  }
+
+  get firstElementChild() {
+    return this.children[0] ?? null;
+  }
+
+  get nextElementSibling() {
+    if (!this.parentNode) {
+      return null;
+    }
+    const siblings = this.parentNode.children;
+    return siblings[siblings.indexOf(this) + 1] ?? null;
   }
 
   get parentElement() {
@@ -137,8 +158,46 @@ export class FakeElement {
     return node;
   }
 
+  /** Inserts node before reference (or appends when reference is null), as the DOM does. */
+  insertBefore(node, reference) {
+    if (reference === null || reference === undefined) {
+      return this.appendChild(node);
+    }
+    if (node.parentNode) {
+      node.parentNode.removeChild(node);
+    }
+    const at = this.childNodes.indexOf(reference);
+    if (at < 0) {
+      throw new Error('insertBefore: the reference node is not a child');
+    }
+    node.parentNode = this;
+    this.childNodes.splice(at, 0, node);
+    return node;
+  }
+
+  remove() {
+    this.parentNode?.removeChild(this);
+  }
+
+  /**
+   * One box, or none while the element or an ancestor carries the hidden attribute: what the page's
+   * focusField reads to pick a control that is on screen. Nothing is laid out here.
+   */
+  getClientRects() {
+    for (const node of this.selfAndAncestors()) {
+      if (node.hasAttribute('hidden')) {
+        return [];
+      }
+    }
+    return [{ width: 1, height: 1 }];
+  }
+
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
+    // The value attribute is a control's default value, which the value property reflects until the user types.
+    if (name === 'value') {
+      this.value = String(value);
+    }
     if (name.startsWith('data-')) {
       this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = String(value);
     }
@@ -256,6 +315,7 @@ export class FakeElement {
     const detail = typeof event === 'string' ? { type: event } : event;
     detail.target ??= this;
     detail.preventDefault ??= () => undefined;
+    detail.stopPropagation ??= () => undefined;
     for (const node of this.selfAndAncestors()) {
       for (const fn of [...(node.listeners.get(detail.type) ?? [])]) {
         fn(detail);
@@ -272,10 +332,6 @@ export class FakeElement {
 
   focus() {
     this.ownerDocument.activeElement = this;
-  }
-
-  scrollIntoView() {
-    // Nothing is laid out here.
   }
 
   matches(selector, scope = null) {
@@ -345,6 +401,7 @@ export function createFakeDom() {
     clearTimeout: () => undefined,
     open: () => null,
     matchMedia: () => ({ matches: false }),
+    innerWidth: 900,
   };
   return { document, window };
 }
