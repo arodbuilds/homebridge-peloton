@@ -1,7 +1,7 @@
 # Handoff: homebridge-peloton settings page
 
 ## Overview
-The Homebridge config UI (`config.schema.json` custom UI) for **homebridge-peloton**, display name **Peloton**. The page connects one or more Peloton accounts, defines trigger sensors (Workout, Heart-rate zone), sets polling behaviour and plugin-wide settings. It runs on the Homebridge Plugin Shell, the same shell as `homebridge-notify-switch` (see Shell below), and must look and behave like a native Homebridge settings page in both the light and dark host themes.
+The Homebridge config UI (`config.schema.json` custom UI) for **homebridge-peloton**, display name **Peloton**. The page connects one or more Peloton accounts, defines trigger sensors (Workout; Heart-rate zone is not offered in this release, see Triggers), sets polling behaviour and plugin-wide settings. It runs on the Homebridge Plugin Shell, the same shell as `homebridge-notify-switch` (see Shell below), and must look and behave like a native Homebridge settings page in both the light and dark host themes.
 
 ## About the design files
 `peloton-settings.html` is the beta.2 export (Peloton Settings.html from the September 14, 2026 handoff): a single self-contained interactive prototype of the page on the shell 1.3.2, with the shell bundle, the tokens, React, the two Peloton scripts and the images inlined. It is not production code. Recreate it inside the plugin's custom UI (`homebridge-ui/public/`) on the shell files, not by shipping this file. The strip above the modal is review chrome, not the plugin page; the modal title bar and CLOSE / SAVE are the host's. `peloton-handoff-notes.md` says how to read it and which decisions it applies; `peloton-alignment-inventory.md` lists every difference between the export, the shipped page and the shell, with how each was resolved recorded under Shell below.
@@ -27,17 +27,17 @@ At v1.3.2 the shell is TypeScript under `homebridge-ui/src/` in that repository,
 **Peloton files** under `homebridge-ui/public/`: `index.html` (links `index.css` then `peloton.css`; the root carries `notify-switch-ui peloton-ui`), `peloton.css` (the tokens as host Bootstrap variables with the light fallbacks, the account cards and pills, the connect panel, the chips, the callout, the collapsible card header additions, the section error, the outlined and warning badges), `peloton-dom.js` (time and radio fields, badges, the pill, the 38 px outlined link-colour button, initials, relative times, the footer mark), `copy.js` (every Peloton string and the label table `FIELD_LABELS`), `model.js`, `api.js`, `accounts.js`, `triggers.js`, `polling.js`, `settings.js`, `app.js` (the Peloton parts) and `peloton-banner.png`.
 
 **Inventory resolutions** (`peloton-alignment-inventory.md`, Export vs repo; the numbers are the inventory's):
-1. Device options with Guide: PR 2, not done here.
+1. Device options with Guide: done in PR 2 (export).
 2. Collapse toggle label: "Show settings" / "Done" (export).
 3. Header toggle: the whole row toggles, chevron at the right edge (export; the chevron is the shell's `.ns-chevron` glyph).
 4. Collapsed summary after the badges (export).
-5. Add trigger without the chooser and the zone card badge: PR 2, not done here; the chooser stays.
+5. Add trigger without the chooser and the zone card badge: done in PR 2 (export).
 6. Who: the repo's options stand, as the inventory records.
 7. Estimate line: counts Connected plus Checking accounts (export), and keeps the repo's fallback to the configured count, else 1, while none is connected.
 8. Fast polling switch Name: always shown (export).
 9. Avatar fallback: the repo's initials on a disc stand. The export's letter placeholder is Peloton's own placeholder image, which the decisions above rule out, and the disc follows the host theme without image assets.
 10. Banner: the export's `peloton-banner-beta2.png` is the same artwork and tagline as `assets/peloton-banner.png` (only file metadata differs), so the repo's copy stands.
-11. Version: PR 2, not done here.
+11. Version: 0.1.0-beta.2 in PR 2, read from package.json.
 12. Settings placement: everything under Advanced in the fixed order (export).
 13. Empty trigger Name: "Name is required." from the label table (shell W4).
 14. Trigger footer result line: the repo's per-account result line after a failed Test stands (the export omits a state the page needs).
@@ -126,7 +126,7 @@ Devices row (12.6 px muted, read-only): "Devices on this membership: Blue Door+ 
 ## Triggers
 Intro: "Each trigger is a sensor in the Home app. It turns on while its condition is true and off when it stops, so one sensor gives you both a start and an end automation."
 
-**Card header** (shell C1 with the collapsible additions of `HANDOFF.md`): the subtle strip, 8 px 16 px, clusters aligned on the first baseline. Left: bold name at weight 700 (live as typed, "New trigger" when empty), type badge (filled), then outlined badges: who ("Anyone" or first name), "Zone N+" for heart-rate cards, accessory kind; while collapsed, a muted 12.6 px summary of the key values follows the badges: "{Who} · {Device} · All activities (or n of 12 activities) · Keep on 90 s" on a Workout card, "{First name} · Zone 4+ · Hold 20 s" on a Heart-rate zone card. Right (12.6 px links, 12 px apart): the "Show help / Hide help" toggle only while the card is open, then "Show settings" (collapsed) / "Done" (open), then the chevron at the right edge (pointing down while collapsed, up while open). The whole row toggles the card, by click, Enter or Space; the help toggle and the link handle their own clicks. Opening and closing happen in place: the body and footer show or hide and nothing is rebuilt. Cards loaded from config start collapsed (header only); the only trigger on the page, a card just added and a duplicate open expanded. At 400 px the badges and the summary wrap under the name while the right cluster stays on the first row.
+**Card header** (shell C1 with the collapsible additions of `HANDOFF.md`): the subtle strip, 8 px 16 px, clusters aligned on the first baseline. Left: bold name at weight 700 (live as typed, "New trigger" when empty), type badge (filled), the warning badge "Not offered in this release" on a Heart-rate zone card, then outlined badges: who ("Anyone" or first name), "Zone N+" for heart-rate cards, accessory kind; while collapsed, a muted 12.6 px summary of the key values follows the badges: "{Who} · {Device} · All activities (or n of 12 activities) · Keep on 90 s" on a Workout card, "{First name} · Zone 4+ · Hold 20 s" on a Heart-rate zone card. Right (12.6 px links, 12 px apart): the "Show help / Hide help" toggle only while the card is open, then "Show settings" (collapsed) / "Done" (open), then the chevron at the right edge (pointing down while collapsed, up while open). The whole row toggles the card, by click, Enter or Space; the help toggle and the link handle their own clicks. Opening and closing happen in place: the body and footer show or hide and nothing is rebuilt. Cards loaded from config start collapsed (header only); the only trigger on the page, a card just added and a duplicate open expanded. At 400 px the badges and the summary wrap under the name while the right cluster stays on the first row.
 Warning state (Heart-rate zone whose member is not connected): warning badge "Not connected" in the header and a warning strip under it: "This member has not connected yet. The sensor stays off until they do."
 
 **Body**: 12-column grid, 8 px column gap, 16 px between fields; every cell full width below 600 px.
@@ -135,12 +135,12 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 - Name (required, prefilled "Workout" on a new card, no placeholder). Caption "Shown in the Home app. Letters, numbers, spaces and apostrophes."
 - Show in HomeKit as (radio): Occupancy sensor (default) / Switch. Caption "Occupancy sensor is on while the workout is in progress. Switch behaves the same but appears as a toggle."
 - Who (select, 6 cols): Anyone on this membership (default) / each connected member by name.
-- Device (select, 6 cols): Any device (default) / Bike / Tread. Caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+." Clarification (SPEC 6 and 8.3): the choice is the hardware family, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
+- Device (select, 6 cols): Any device (default) / Bike / Tread / Guide. Caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide." Clarification (SPEC 6 and 8.3): the choice is the hardware family, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
 - Activities (multi-select chips, default all, "Select all / none" links, summary "All activities" or "n of 12 selected"): Cycling, Running, Walking, Rowing, Strength, Yoga, Stretching, Meditation, Cardio, Bike bootcamp, Tread bootcamp, Row bootcamp. Chip: 31 px tall, 16 px radius; selected = `--ns-link` fill white text, unselected = 1 px `--ns-border` outline.
 - Keep on after the workout ends (seconds) (number, 6 cols, default 90). Caption "Holds the sensor on briefly so stacked classes do not turn your scene off between them."
 
-**Heart-rate zone**
-- Name (required, prefilled "Zone 4 or higher" on a new card, no placeholder; the value follows the chosen zone, "Zone 3 or higher" when zone 3 is picked, until the user edits the name).
+**Heart-rate zone** (not offered in this release, SPEC section 2: the page creates no new card of this type; a trigger already in config renders as below with the badge "Not offered in this release" and can be opened, edited, duplicated and removed)
+- Name (required, no placeholder; the zone-following default name of a new card stays in the page model for when the offering returns).
 - Show in HomeKit as: Occupancy sensor / Switch.
 - Who (select, 6 cols): connected members only, no Anyone. Caption "Zones come from this member's Peloton profile."
 - Zone at or above (select 1 to 5, 3 cols, default 4).
@@ -149,7 +149,7 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 
 **Footer strip** (shell C4): "Remove trigger" (danger text button, confirms in place: "Remove {name}?" + red REMOVE + Cancel), "Duplicate trigger" (link). No primary action, a Peloton exception to C4 recorded in SPEC.md section 10.
 
-**Add trigger** opens a two-tile chooser (prompt "What should this trigger watch?"): "Workout: On while a workout is in progress." / "Heart-rate zone: On while heart rate is at or above a zone." Cancel closes it. A new card starts empty and focuses Name.
+**Add trigger** creates a Workout card directly, expanded, with the Name prefilled "Workout" and focused; there is no chooser while one trigger type is offered. (The two-tile chooser of beta.1, "What should this trigger watch?", returns with the Heart-rate zone offering.)
 
 ## Polling
 Intro: "How often the plugin asks Peloton what is happening." Fields render uncarded on the page grid.
@@ -229,6 +229,14 @@ The alignment with the shell 1.3.2 (SPEC.md section 16) settled these; the expor
 - The Connect button is the shell's 38 px primary button (the same as a section's Add button); the outlined 38 px "Open Peloton sign-in" and the promoted "Sign in with browser" stay Peloton's (`ns-outline`).
 - The per-account result line after a failed Test, the connect panel pre-checks, the restore error messages and the server-unavailable message stay as in beta.1 (inventory items 14 and 15).
 
+## Clarifications from beta.2, PR 2
+The second PR of beta.2 (SPEC.md section 16) settled these; `peloton-handoff-notes.md` (Peloton decisions applied) is the source.
+- Add trigger: no chooser. The button creates a Workout card directly, opens it and focuses its Name; the chooser's copy (`chooserPrompt`, `tiles`) and its Peloton styles are gone from copy.js and peloton.css, and the shell's tile styles in index.css stay untouched.
+- Heart-rate zone cards: not created by the page in this release. A stored one renders with the warning badge "Not offered in this release" directly after the type badge, collapsed like any card loaded from config, and can be opened, edited, duplicated and removed; the "Not connected" badge and strip still apply. The runtime keeps the type (SPEC section 2, item 11).
+- Device: Any device / Bike / Tread / Guide with the caption above; Guide is matched by the workout platform `tiger` (SPEC 4.2 and 8.3).
+- Version: the footer reads 0.1.0-beta.2 from package.json through /status.
+- Screenshots: the README walks through four of the five (accounts, trigger-workout, polling, settings); `trigger-zone.png` stays in `assets/screenshots/` for when the offering returns.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 
@@ -250,7 +258,7 @@ Every token in `peloton.css` reads the host's Bootstrap variable with the light 
 
 ## Assets (`assets/`)
 - `peloton-banner.png` 1280 × 320 page banner, regenerated in build 4 on the same layout (mark, divider, wordmark) with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones."; no em dash. The settings page ships its own copy under `homebridge-ui/public/`.
-- `screenshots/` the five masked settings page screenshots the README walks through: accounts, trigger-workout, trigger-zone, polling, settings.
+- `screenshots/` the five masked settings page screenshots: accounts, trigger-workout, polling, settings (the four the README walks through) and trigger-zone (kept for when the Heart-rate zone offering returns).
 - `peloton-footer.svg` 24-grid footer glyph, currentColor, render at 20 px. Inline it so it follows the host theme.
 - `peloton-mark.svg` mark alone; `peloton-dark.svg` / `peloton-light.svg` 192 tiles; `peloton-192.png`, `peloton-512.png` plugin listing rasters.
 - `ICONS.md` geometry and colour notes for the mark.

@@ -1,21 +1,31 @@
 # Changelog
 
-All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1.
+All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
-## Unreleased
+## 0.1.0-beta.2 (2026-09-14)
 
-Beta.2, PR 1 of 2: the settings page aligned with the Homebridge Plugin Shell as homebridge-notify-switch v1.3.2 ships it. The Guide device option, the Heart-rate zone suppression and the version bump follow in PR 2.
+Beta.2 in two PRs. PR 1: the settings page aligned with the Homebridge Plugin Shell as homebridge-notify-switch v1.3.2 ships it. PR 2: the Guide device option, the Heart-rate zone triggers withdrawn from the settings page for this release, the provenance note on the auth module, the README badges and credits, the CodeQL configuration, and the version.
 
 ### Added
 
+- Guide as a Device option on Workout triggers, matched by the workout platform `tiger` (device_type `t21n8m2`, observed on 11 September 2026): "Any device", "Bike", "Tread", "Guide" in the settings page, `config.schema.json` and `src/config.ts`, with the caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide." SPEC section 4.2 carries the Guide's codes and section 15 closes the item.
+- A provenance note at the top of `src/auth/peloton-auth.ts`: the flow was written from observation of Peloton's Auth0 login on September 10 to 11, 2026, and the endpoint and parameter knowledge was cross-checked against peloton-to-garmin, the Home Assistant Peloton integration and @dofek/peloton; no code was taken from them.
+- The README badges row after the banner: npm version on the beta tag, npm downloads, license, then the build badge; the verified badge stays commented out. The credits name each project's license (peloton-to-garmin GPL-3.0, the Home Assistant Peloton integration Apache-2.0, @dofek/peloton MIT) and state that this plugin shares no code with them.
+- `.github/codeql/codeql-config.yml` with `paths-ignore` for `design/**`, `assets/**` and `test/**`, so CodeQL default setup skips the design prototype, the artwork and the test fixtures, and a `permissions: contents: read` block on the build workflow (CodeQL alert #1).
 - The shell files under `homebridge-ui/public/`: `index.css` copied byte for byte from homebridge-notify-switch v1.3.2, and `dom.js`, `card.js`, `draft.js`, `footer.js` and `shell-copy.js` ported function by function from the shell's TypeScript at that tag; `peloton.css` and `peloton-dom.js` hold what only Peloton draws. design/README.md lists which files are the shell's and which are Peloton's.
 - The shell contract in `design/`: `HANDOFF.md`, `BUILD-CONTRACT.md` and `BUILD-CONTRACT-DEFINITIONS.md` from that tag, with the beta.2 export (`peloton-settings.html`), its handoff notes and the alignment inventory, resolved item by item in design/README.md.
 - Trigger cards open and close from the whole header row (click, Enter, Space) with a chevron at the right edge, "Show settings" while collapsed and "Done" while open, the help toggle only while open, and a muted summary of the key values after the badges while collapsed (who, device, activities and keep-on for a Workout card; member, zone and hold for a Heart-rate zone card). The only trigger, a new one and a duplicate open expanded.
 - Every empty required field reads "{Label} is required." from one label table (`FIELD_LABELS` in copy.js), so an empty trigger Name reads "Name is required." in the field and in the summary box.
 - A draft suite (`test/ui-draft.test.mjs`) and page tests for the moved Settings fields, the card header, the summary box, the draft rules, the estimate and the callout.
+- Rules, config, schema and page tests for the Guide filter, for Add trigger without a chooser, and for a stored Heart-rate zone card with its badge.
 
 ### Changed
 
+- Heart-rate zone triggers are not offered on the settings page in this release, since the offering needs more refinement (SPEC section 2). The Add trigger chooser is gone: with one type left, Add trigger creates a Workout card directly and focuses its Name. A Heart-rate zone trigger already in config still renders, with the badge "Not offered in this release" after its type badge, and can be opened, edited, duplicated and removed. The runtime, `config.schema.json`, the rules, the poller, the accessories and their tests keep the type exactly as it was.
+- README: the Heart-rate zone setup section, its screenshot reference and the heart-rate monitor line under Requirements are gone; the Workout trigger section says "Heart-rate zone triggers are being refined and are not offered in this release." and names the Guide; the `npm run watch` row is gone.
+- `nodemon.json`, the `watch` script and the nodemon dev dependency are removed.
+- Version 0.1.0-beta.2 in package.json and the version literals in the tests; the settings page footer reads it from package.json.
+- SPEC: the version line, the Heart-rate zone decision in section 2, the Guide in sections 4.2, 6 and 8.3, the page in sections 10, 13 and 14, section 15 down to the three open items (Row hardware, verification-required accounts, the Heart-rate zone offering) and the PR 2 notes in section 16. design/README.md records the Add trigger, the badge and the Guide option under Clarifications from beta.2, PR 2.
 - Settings is the intro and one collapsed Advanced disclosure holding, in this order, Name, Debug logging, Fast polling switch turns off after (minutes), Attention needed sensor, Daily check-in time and Restore from backup; it opens when anything inside differs from its default, turns invalid, or is targeted by a summary entry. The Restore caption reads as in Notify Switch.
 - The summary box sits in the page flow after Settings and before the closing paragraph, in the warning tone with the shell's `#ffecb5` border and no shadow, instead of sticking to the bottom of the page. Its entries are updated in place and, clicked, focus the named control itself, opening a collapsed card or Advanced first and rebuilding nothing.
 - The unsaved draft is written only once something changed on the page, never by the load, and is never offered on a page that opens with no saved Peloton configuration.
