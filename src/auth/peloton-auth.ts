@@ -3,6 +3,10 @@
  *
  * This is the only file that knows Auth0 URLs, the client id, scopes, or HTML form handling.
  * When Peloton changes its login flow, the fix is inside this file (SPEC section 5).
+ *
+ * Flow written from observation of Peloton's Auth0 login on September 10 to 11, 2026. Endpoint and
+ * parameter knowledge cross-checked against peloton-to-garmin, the Home Assistant Peloton
+ * integration, and @dofek/peloton; no code was taken from them.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
