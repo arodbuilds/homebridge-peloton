@@ -132,13 +132,14 @@
             },
             "device": {
               "title": "Device",
-              "description": "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+.",
+              "description": "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide.",
               "type": "string",
               "default": "any",
               "oneOf": [
                 { "title": "Any device", "enum": ["any"] },
                 { "title": "Bike", "enum": ["bike"] },
-                { "title": "Tread", "enum": ["tread"] }
+                { "title": "Tread", "enum": ["tread"] },
+                { "title": "Guide", "enum": ["guide"] }
               ]
             },
             "holdAfterEnd": {

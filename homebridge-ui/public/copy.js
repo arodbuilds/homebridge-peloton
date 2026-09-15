@@ -133,13 +133,10 @@ export const TRIGGERS = {
   empty: 'No triggers yet. Add one to create a HomeKit sensor.',
   add: 'Add trigger',
   newTrigger: 'New trigger',
-  chooserPrompt: 'What should this trigger watch?',
-  tiles: [
-    { type: 'workout', name: 'Workout', description: 'On while a workout is in progress.' },
-    { type: 'hrZone', name: 'Heart-rate zone', description: 'On while heart rate is at or above a zone.' },
-  ],
   cancel: 'Cancel',
   typeBadge: { workout: 'Workout', hrZone: 'Heart-rate zone' },
+  /** On a Heart-rate zone card from config: the type is not offered on this page in this release (SPEC section 2). */
+  notOffered: 'Not offered in this release',
   anyone: 'Anyone',
   zoneBadge: (zone) => `Zone ${zone}+`,
   accessoryBadge: { occupancy: 'Occupancy sensor', switch: 'Switch' },
@@ -166,8 +163,8 @@ export const TRIGGERS = {
   whoChoose: 'Choose a member',
   whoHelp: 'Zones come from this member\'s Peloton profile.',
   device: FIELD_LABELS.device,
-  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread' },
-  deviceHelp: 'Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+.',
+  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread', guide: 'Guide' },
+  deviceHelp: 'Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide.',
   activities: FIELD_LABELS.activities,
   activityLabels: {
     cycling: 'Cycling', running: 'Running', walking: 'Walking', rowing: 'Rowing', strength: 'Strength', yoga: 'Yoga',

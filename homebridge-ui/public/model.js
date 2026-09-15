@@ -34,7 +34,7 @@ export const ACTIVITIES = [
   'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio', 'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
 ];
 
-export const DEVICES = ['any', 'bike', 'tread'];
+export const DEVICES = ['any', 'bike', 'tread', 'guide'];
 
 /**
  * How one device from /status reads on the Devices line: its name with the group after it in
@@ -293,7 +293,7 @@ export function defaultTriggerName(type, zone = DEFAULTS.zone) {
 }
 
 /**
- * A new trigger as the Add chooser creates it: every field at its default and the Name prefilled.
+ * A new trigger as Add trigger creates it: every field at its default and the Name prefilled.
  * A zone trigger's name follows the chosen zone (nameFollowsZone, a page-side flag the export never
  * writes) until the user edits the name.
  */

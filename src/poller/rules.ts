@@ -9,15 +9,17 @@ import type { DeviceFilter, HrZoneTriggerConfig, WorkoutTriggerConfig } from '..
 import type { StoredZone } from '../store/account-store.js';
 
 /**
- * The workout platform each device filter stands for (SPEC section 8.3). Confirmed on the Pi ride
+ * The workout platform each device filter stands for (SPEC section 8.3). Confirmed on the Pi
  * tests: the Bike+ reports device_type home_bike_plus with platform home_bike, the Tread reports
- * device_type prism with platform home_tread, and an Apple Health import reports device_type
- * apple_health with platform iOS_app. device_type is the hardware model code and stays in the
- * debug log; platform is what the filter compares.
+ * device_type prism with platform home_tread, the Guide reports device_type t21n8m2 with platform
+ * tiger (observed 11 September 2026), and an Apple Health import reports device_type apple_health
+ * with platform iOS_app. device_type is the hardware model code and stays in the debug log;
+ * platform is what the filter compares.
  */
 export const PLATFORM_BY_DEVICE: Readonly<Record<Exclude<DeviceFilter, 'any'>, string>> = {
   bike: 'home_bike',
   tread: 'home_tread',
+  guide: 'tiger',
 };
 
 /**
@@ -33,8 +35,9 @@ export function isDetectable(workout: Workout | null | undefined): workout is Wo
 
 /**
  * Compares a trigger's device filter with the workout's platform: "any" matches every workout,
- * "bike" matches platform home_bike, "tread" matches platform home_tread. Workouts carry no device
- * id, so this is the whole device rule; an import or an app workout matches only "any".
+ * "bike" matches platform home_bike, "tread" matches platform home_tread, "guide" matches platform
+ * tiger. Workouts carry no device id, so this is the whole device rule; an import or an app workout
+ * matches only "any".
  */
 export function deviceMatches(device: DeviceFilter | string, workout: Workout): boolean {
   if (device === 'any') {

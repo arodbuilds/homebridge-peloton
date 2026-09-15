@@ -107,6 +107,7 @@ describe('config.schema.json', () => {
   it('limits device, accessory, type, activities, zone, and the check-in time to their values', () => {
     assert.equal(validate(withTrigger(0, { device: 'bike' })), true);
     assert.equal(validate(withTrigger(0, { device: 'tread' })), true);
+    assert.equal(validate(withTrigger(0, { device: 'guide' })), true);
     assert.equal(validate(withTrigger(0, { device: 'dev-bike-0001' })), false);
     assert.equal(validate(withTrigger(0, { accessory: 'contact' })), false);
     assert.equal(validate(withTrigger(0, { type: 'motion' })), false);

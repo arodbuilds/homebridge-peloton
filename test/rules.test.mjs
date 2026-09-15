@@ -37,6 +37,11 @@ function onTread(workout) {
   return { ...workout, fitnessDiscipline: 'running', deviceType: 'prism', platform: 'home_tread' };
 }
 
+/** A Guide class as observed on 11 September 2026: device_type t21n8m2, platform tiger. */
+function onGuide(workout) {
+  return { ...workout, fitnessDiscipline: 'strength', deviceType: 't21n8m2', platform: 'tiger' };
+}
+
 describe('isDetectable', () => {
   it('accepts IN_PROGRESS and COMPLETE Peloton workouts', async () => {
     assert.equal(isDetectable(await workoutFixture('workout-in-progress-cycling')), true);
@@ -82,8 +87,8 @@ describe('workoutMatches', () => {
     assert.equal(workoutMatches(trigger(), odd, OWNER), true);
   });
 
-  it('maps the bike filter to platform home_bike and the tread filter to home_tread', () => {
-    assert.deepEqual(PLATFORM_BY_DEVICE, { bike: 'home_bike', tread: 'home_tread' });
+  it('maps the bike filter to platform home_bike, the tread filter to home_tread, and the guide filter to tiger', () => {
+    assert.deepEqual(PLATFORM_BY_DEVICE, { bike: 'home_bike', tread: 'home_tread', guide: 'tiger' });
   });
 
   it('matches a Bike+ ride (device_type home_bike_plus, platform home_bike) for bike and any but not tread', async () => {
@@ -93,6 +98,7 @@ describe('workoutMatches', () => {
     assert.equal(deviceMatches('any', cycling), true);
     assert.equal(deviceMatches('bike', cycling), true);
     assert.equal(deviceMatches('tread', cycling), false);
+    assert.equal(deviceMatches('guide', cycling), false);
     assert.equal(workoutMatches(trigger({ device: 'bike' }), cycling, OWNER), true);
     assert.equal(workoutMatches(trigger({ device: 'tread' }), cycling, OWNER), false);
     assert.equal(workoutMatches(trigger({ device: 'any' }), cycling, OWNER), true);
@@ -102,22 +108,37 @@ describe('workoutMatches', () => {
     const run = onTread(await workoutFixture('workout-in-progress-cycling'));
     assert.equal(deviceMatches('tread', run), true);
     assert.equal(deviceMatches('bike', run), false);
+    assert.equal(deviceMatches('guide', run), false);
     assert.equal(deviceMatches('any', run), true);
     assert.equal(workoutMatches(trigger({ device: 'tread' }), run, OWNER), true);
     assert.equal(workoutMatches(trigger({ device: 'tread', activities: ['running'] }), run, OWNER), true);
     assert.equal(workoutMatches(trigger({ device: 'bike' }), run, OWNER), false);
   });
 
+  it('matches a Guide class (device_type t21n8m2, platform tiger) for guide and any but not bike or tread', async () => {
+    const guide = onGuide(await workoutFixture('workout-in-progress-cycling'));
+    assert.equal(deviceMatches('guide', guide), true);
+    assert.equal(deviceMatches('bike', guide), false);
+    assert.equal(deviceMatches('tread', guide), false);
+    assert.equal(deviceMatches('any', guide), true);
+    assert.equal(workoutMatches(trigger({ device: 'guide' }), guide, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'guide', activities: ['strength'] }), guide, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'guide', activities: ['cycling'] }), guide, OWNER), false);
+    assert.equal(workoutMatches(trigger({ device: 'tread' }), guide, OWNER), false);
+  });
+
   it('matches an app workout or an Apple Health import (platform iOS_app) only for any', async () => {
     const strength = await workoutFixture('workout-in-progress-strength');
     assert.equal(deviceMatches('bike', strength), false);
     assert.equal(deviceMatches('tread', strength), false);
+    assert.equal(deviceMatches('guide', strength), false);
     assert.equal(deviceMatches('any', strength), true);
     const imported = await workoutFixture('workout-3p-fit-feed-running');
     assert.equal(imported.deviceType, 'apple_health');
     assert.equal(imported.platform, 'iOS_app');
     assert.equal(deviceMatches('bike', imported), false);
     assert.equal(deviceMatches('tread', imported), false);
+    assert.equal(deviceMatches('guide', imported), false);
     assert.equal(deviceMatches('any', imported), true);
     // An unknown filter value never matches; config.ts replaces it with "any" before it gets here.
     assert.equal(deviceMatches('rower', strength), false);
