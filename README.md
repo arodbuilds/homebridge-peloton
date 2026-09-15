@@ -11,7 +11,7 @@ Do not claim it. Once the plugin is verified, replace this comment with the badg
 [![License](https://img.shields.io/github/license/arodbuilds/homebridge-peloton)](LICENSE)
 [![Build, lint, and test](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml/badge.svg)](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml)
 
-A [Homebridge](https://homebridge.io) plugin that turns Peloton workouts into HomeKit sensors. It watches the Peloton accounts in your household and exposes trigger sensors that are on while a workout is in progress, or while a rider is at or above a heart-rate zone, so Home app automations can react when a workout starts, ends, or gets hard: dim the lights when the ride begins, turn on a fan at zone 4, bring the lights back when the class ends.
+A [Homebridge](https://homebridge.io) plugin that turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends. It watches the Peloton accounts in your household and exposes trigger sensors that are on while a workout is in progress: dim the lights when the ride begins, bring them back when the class ends.
 
 Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice.
 
