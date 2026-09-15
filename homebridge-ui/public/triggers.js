@@ -1,7 +1,11 @@
 /**
  * The Triggers section (design/README.md, Triggers): Workout and Heart-rate zone cards on the shell card
  * anatomy with the collapsible header (the whole row toggles, a chevron at the right edge, a muted summary
- * of the key values while collapsed), the Add trigger chooser, and Duplicate and Remove.
+ * of the key values while collapsed), the Add trigger button, and Duplicate and Remove.
+ *
+ * Heart-rate zone triggers are not offered in this release (SPEC section 2): Add trigger creates a Workout
+ * card directly, with no chooser. A Heart-rate zone trigger already in config still renders, with the badge
+ * "Not offered in this release", and can be opened, edited, duplicated and removed as before.
  */
 
 import { TRIGGERS } from './copy.js';
@@ -17,56 +21,27 @@ export function renderTriggers(app, container) {
   // The cards of this render, by trigger id: how focusField opens a collapsed card in place.
   ui.cards = new Map();
   container.appendChild(paragraph(TRIGGERS.intro));
-  if (app.config.triggers.length === 0 && !ui.chooserOpen) {
+  if (app.config.triggers.length === 0) {
     container.appendChild(el('p', { class: 'form-text ns-empty-line' }, TRIGGERS.empty));
   }
   app.config.triggers.forEach((trigger, index) => {
     container.appendChild(renderCard(app, trigger, index));
   });
-  if (ui.chooserOpen) {
-    container.appendChild(renderChooser(app));
-  } else {
-    container.appendChild(el('div', { class: 'ns-add-trigger' }, addButton(TRIGGERS.add, () => {
-      ui.chooserOpen = true;
-      app.rerender('triggers', false);
-    }, true)));
-  }
+  // With one trigger type offered there is no chooser: Add trigger creates a Workout card and focuses its Name.
+  container.appendChild(el('div', { class: 'ns-add-trigger' }, addButton(TRIGGERS.add, () => {
+    const trigger = newTrigger('workout');
+    app.config.triggers.push(trigger);
+    ui.expanded.add(trigger.id);
+    app.addFresh(trigger);
+    app.rerender('triggers');
+    focusName(trigger);
+  }, true)));
 }
 
 /** A newly added card focuses its Name field (shell rule T5); nothing scrolls, focus brings it into view. */
 function focusName(trigger) {
   const card = document.querySelector(`[data-trigger="${trigger.id}"]`);
   card?.querySelector('[data-path$=".name"] input')?.focus();
-}
-
-function renderChooser(app) {
-  const ui = app.triggersUi;
-  const tiles = el('div', { class: 'ns-chooser-tiles' });
-  for (const tile of TRIGGERS.tiles) {
-    const node = el('button', { type: 'button', class: 'ns-chooser-tile' },
-      el('div', { class: 'fw-semibold ns-tile-title' }, tile.name),
-      el('div', { class: 'form-text ns-secondary', style: 'margin-top:0' }, tile.description),
-    );
-    node.addEventListener('click', () => {
-      const connected = app.members().filter((member) => member.connected);
-      const trigger = newTrigger(tile.type, connected[0]?.userId);
-      app.config.triggers.push(trigger);
-      ui.expanded.add(trigger.id);
-      ui.chooserOpen = false;
-      app.addFresh(trigger);
-      app.rerender('triggers');
-      focusName(trigger);
-    });
-    tiles.appendChild(node);
-  }
-  return el('div', { class: 'ns-chooser' },
-    el('div', { class: 'fw-semibold ns-chooser-prompt' }, TRIGGERS.chooserPrompt),
-    tiles,
-    el('div', { class: 'ns-chooser-cancel' }, linkButton(TRIGGERS.cancel, () => {
-      ui.chooserOpen = false;
-      app.rerender('triggers', false);
-    }, 'ns-secondary')),
-  );
 }
 
 /** The member a trigger names, as the header badge shows it: "Anyone" or the first name. */
@@ -128,9 +103,10 @@ function renderCard(app, trigger, index) {
   const path = `triggers[${index}]`;
   const card = el('div', { class: 'card mb-3 ns-trigger-card', 'data-trigger': trigger.id, 'data-card': path });
 
-  // Header (shell rule C1 with the collapsible additions): the bold name, the type badge, the outlined detail
-  // badges, the warning badge, then the summary while collapsed; at the right the help toggle (open only),
-  // "Show settings" or "Done", and the chevron. The whole row toggles.
+  // Header (shell rule C1 with the collapsible additions): the bold name, the type badge (with the "Not offered"
+  // badge on a Heart-rate zone card), the outlined detail badges, the warning badge, then the summary while
+  // collapsed; at the right the help toggle (open only), "Show settings" or "Done", and the chevron. The whole
+  // row toggles.
   const name = el('strong', { class: 'ns-card-name' });
   const badges = el('span', { class: 'ns-card-badges' });
   const summary = el('span', { class: 'small ns-secondary ns-card-summary', hidden: true });
@@ -140,6 +116,9 @@ function renderCard(app, trigger, index) {
     name.textContent = triggerTitle(trigger, TRIGGERS.newTrigger);
     clear(badges);
     badges.appendChild(headerBadge(TRIGGERS.typeBadge[trigger.type], 'type'));
+    if (trigger.type === 'hrZone') {
+      badges.appendChild(badge(TRIGGERS.notOffered, 'warning'));
+    }
     badges.appendChild(badge(whoBadge(app, trigger), 'outline'));
     if (trigger.type === 'hrZone') {
       badges.appendChild(badge(TRIGGERS.zoneBadge(trigger.zone), 'outline'));
