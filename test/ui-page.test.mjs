@@ -80,7 +80,7 @@ const STATUS = {
     { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
     { id: 'dev-guide-0001', name: null, group: 'guide' },
   ],
-  version: '0.1.0-beta.1',
+  version: '0.1.0-beta.2',
 };
 
 /** Builds the page for a platform block and the given /status answer, as start() does after getPluginConfig and /status. */
@@ -117,9 +117,9 @@ function runTimeouts() {
   }
 }
 
-function addTrigger(root, tileName) {
+/** Add trigger creates a Workout card directly: there is no chooser while Heart-rate zone is not offered. */
+function addTrigger(root) {
   buttonNamed(root, 'Add trigger').click();
-  [...root.querySelectorAll('.ns-chooser-tile')].find((tile) => tile.querySelector('.ns-tile-title').textContent === tileName).click();
 }
 
 const TWO_TRIGGERS = {
@@ -207,8 +207,7 @@ describe('ids over plain http', () => {
     withoutRandomUUID(() => {
       assert.equal(typeof globalThis.crypto.randomUUID, 'undefined');
       const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }], triggers: [{ id: 't1', type: 'workout', name: 'Workout' }] });
-      buttonNamed(root, 'Add trigger').click();
-      root.querySelector('.ns-chooser-tile').click();
+      addTrigger(root);
       assert.equal(page.config.triggers.length, 2);
       assert.match(page.config.triggers[1].id, UUID);
       assert.ok(page.triggersUi.expanded.has(page.config.triggers[1].id));
@@ -224,8 +223,11 @@ describe('ids over plain http', () => {
 describe('new trigger names', () => {
   it('prefills Workout on a new Workout card, opens it, focuses its Name, and pushes it to the host', () => {
     const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
-    addTrigger(root, 'Workout');
+    assert.equal(root.querySelector('.ns-chooser'), null, 'no chooser: one trigger type is offered');
+    addTrigger(root);
+    assert.equal(root.querySelector('.ns-chooser'), null, 'Add trigger creates the card at once');
     const card = root.querySelector('.ns-trigger-card');
+    assert.equal(page.config.triggers[0].type, 'workout');
     assert.equal(page.config.triggers[0].name, 'Workout');
     const name = card.querySelector('[data-path$=".name"] input');
     assert.equal(name.value, 'Workout');
@@ -236,29 +238,46 @@ describe('new trigger names', () => {
     assert.equal(pushedBlock().triggers.length, 1, 'adding the card is a change the host receives');
   });
 
-  it('prefills Zone 4 or higher on a new Heart-rate zone card and follows the zone until the name is edited', () => {
+  it('offers only Workout: every Add trigger adds a Workout card, never a Heart-rate zone card', () => {
     const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
-    addTrigger(root, 'Heart-rate zone');
-    const card = root.querySelector('.ns-trigger-card');
-    const name = card.querySelector('[data-path$=".name"] input');
+    addTrigger(root);
+    addTrigger(root);
+    assert.deepEqual(page.config.triggers.map((trigger) => trigger.type), ['workout', 'workout']);
+    assert.equal(root.querySelectorAll('.ns-trigger-card').length, 2);
+    assert.equal(root.querySelectorAll('.ns-badge-warning').length, 0, 'a Workout card carries no Not offered badge');
+  });
+});
+
+describe('heart-rate zone cards from config', () => {
+  it('render with the Not offered in this release badge after the type badge, and can be opened and edited', () => {
+    const { page, root } = mount(TWO_TRIGGERS);
+    const card = root.querySelector('[data-trigger="t2"]');
+    const badges = [...card.querySelectorAll('.ns-card-title .badge')];
+    assert.deepEqual(badges.map((badge) => badge.textContent),
+      ['Heart-rate zone', 'Not offered in this release', 'Owner', 'Zone 3+', 'Occupancy sensor']);
+    assert.match(badges[1].className, /\bns-badge-warning\b/);
+    assert.equal(card.querySelector('.ns-warning-strip').hidden, true, 'the member is connected: no warning strip');
+
+    card.querySelector('.card-header').click();
+    assert.equal(card.querySelector('.card-body').hidden, false);
     const zone = card.querySelector('[data-path$=".zone"] select');
-    assert.equal(name.value, 'Zone 4 or higher');
-    assert.equal(page.config.triggers[0].who, 'u-owner-0001', 'the first connected member is preselected');
-
-    zone.value = '3';
-    zone.dispatchEvent('change');
-    assert.equal(page.config.triggers[0].name, 'Zone 3 or higher');
-    assert.equal(name.value, 'Zone 3 or higher');
-    assert.equal(card.querySelector('.ns-card-name').textContent, 'Zone 3 or higher');
-    assert.equal(pushedBlock().triggers[0].name, 'Zone 3 or higher');
-
-    name.value = 'Sprint';
-    name.dispatchEvent('input');
     zone.value = '5';
     zone.dispatchEvent('change');
-    assert.equal(page.config.triggers[0].name, 'Sprint', 'an edited name is left alone');
-    assert.equal(name.value, 'Sprint');
-    assert.equal(page.config.triggers[0].zone, 5);
+    assert.equal(page.config.triggers[1].zone, 5);
+    assert.equal(page.config.triggers[1].name, 'Zone 4 or higher', 'a stored name does not follow the zone');
+    assert.deepEqual([...card.querySelectorAll('.ns-card-title .badge')].map((badge) => badge.textContent).slice(1, 4),
+      ['Not offered in this release', 'Owner', 'Zone 5+']);
+    const hold = card.querySelector('[data-path$=".holdTime"] input');
+    hold.value = '30';
+    hold.dispatchEvent('input');
+    const block = pushedBlock();
+    assert.deepEqual(block.triggers[1],
+      { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: 'u-owner-0001', zone: 5, holdTime: 30 });
+
+    buttonNamed(card, 'Duplicate trigger').click();
+    assert.deepEqual(page.config.triggers.map((trigger) => trigger.type), ['workout', 'hrZone', 'hrZone']);
+    const copy = root.querySelector(`[data-trigger="${page.config.triggers[2].id}"]`);
+    assert.equal([...copy.querySelectorAll('.ns-card-title .badge')][1].textContent, 'Not offered in this release');
   });
 });
 
@@ -284,7 +303,7 @@ describe('trigger card header', () => {
     assert.equal(workout.querySelector('.ns-card-summary').hidden, false);
     assert.equal(workout.querySelector('.ns-card-summary').textContent, 'Anyone · Bike · 2 of 12 activities · Keep on 60 s');
     assert.deepEqual([...zone.querySelectorAll('.ns-card-title .badge')].map((badge) => badge.textContent),
-      ['Heart-rate zone', 'Owner', 'Zone 3+', 'Occupancy sensor']);
+      ['Heart-rate zone', 'Not offered in this release', 'Owner', 'Zone 3+', 'Occupancy sensor']);
     assert.equal(zone.querySelector('.ns-card-summary').textContent, 'Owner · Zone 3+ · Hold 25 s');
     // The summary and the badges share the title cluster, which wraps under the name at narrow widths; the actions cluster is separate.
     assert.ok(workout.querySelector('.ns-card-title .ns-card-summary'));

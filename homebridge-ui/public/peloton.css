@@ -81,7 +81,7 @@ body[class*="config-ui-x-dark-mode"] .peloton-ui {
   box-shadow: none;
 }
 
-/* Cancel, the chooser's Cancel and the help toggle are text buttons in the secondary colour on both themes. */
+/* Cancel and the help toggle are text buttons in the secondary colour on both themes. */
 .peloton-ui .btn-link.ns-secondary {
   --ns-text-button-color: var(--ns-secondary);
   color: var(--ns-secondary);
@@ -377,19 +377,7 @@ body[class*="config-ui-x-dark-mode"] .peloton-ui {
   margin-bottom: 16px;
 }
 
-/* Add trigger chooser (the tiles are the shell's) and the row holding the section's Add button. */
-.ns-chooser {
-  margin-top: 12px;
-}
-
-.ns-chooser-prompt {
-  margin-bottom: 8px;
-}
-
-.ns-chooser-cancel {
-  margin-top: 12px;
-}
-
+/* The row holding the section's Add button. */
 .ns-add-trigger {
   margin-top: 8px;
 }

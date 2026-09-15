@@ -1,0 +1,7 @@
+# CodeQL default setup reads this file. The design prototype, the artwork and the test suites with
+# their fixtures are not part of the published plugin, so they are left out of the analysis.
+name: homebridge-peloton
+paths-ignore:
+  - design/**
+  - assets/**
+  - test/**

@@ -11,10 +11,10 @@ import { randomUUID } from 'node:crypto';
 
 export type AccessoryKind = 'occupancy' | 'switch';
 
-/** A workout trigger's device filter: any hardware, the Bike or Bike+, or the Tread or Tread+ (SPEC section 8.3). */
-export type DeviceFilter = 'any' | 'bike' | 'tread';
+/** A workout trigger's device filter: any hardware, the Bike or Bike+, the Tread or Tread+, or the Guide (SPEC section 8.3). */
+export type DeviceFilter = 'any' | 'bike' | 'tread' | 'guide';
 
-export const DEVICE_FILTERS: readonly DeviceFilter[] = ['any', 'bike', 'tread'];
+export const DEVICE_FILTERS: readonly DeviceFilter[] = ['any', 'bike', 'tread', 'guide'];
 
 export interface AccountConfig {
   id: string;
@@ -33,7 +33,7 @@ export interface WorkoutTriggerConfig {
   who: string;
   /** Empty means all activities. */
   activities: string[];
-  /** "any", "bike", or "tread"; matched against the workout's platform. */
+  /** "any", "bike", "tread", or "guide"; matched against the workout's platform. */
   device: DeviceFilter;
   /** Seconds the sensor stays on after the workout ends. */
   holdAfterEnd: number;
@@ -235,7 +235,7 @@ function deviceFilter(value: unknown, label: string, warn: WarnFn): DeviceFilter
   if (typeof value === 'string' && (DEVICE_FILTERS as readonly string[]).includes(value)) {
     return value as DeviceFilter;
   }
-  warn(`${label}.device is not "any", "bike", or "tread", using "any"`);
+  warn(`${label}.device is not "any", "bike", "tread", or "guide", using "any"`);
   return 'any';
 }
 

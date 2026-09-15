@@ -6,10 +6,12 @@ Do not claim it. Once the plugin is verified, replace this comment with the badg
 [![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 -->
 
-[![npm](https://img.shields.io/npm/v/homebridge-peloton/beta)](https://www.npmjs.com/package/homebridge-peloton)
+[![npm version](https://img.shields.io/npm/v/homebridge-peloton/beta)](https://www.npmjs.com/package/homebridge-peloton)
+[![npm downloads](https://img.shields.io/npm/dt/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
+[![License](https://img.shields.io/github/license/arodbuilds/homebridge-peloton)](LICENSE)
 [![Build, lint, and test](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml/badge.svg)](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml)
 
-A [Homebridge](https://homebridge.io) plugin that turns Peloton workouts into HomeKit sensors. It watches the Peloton accounts in your household and exposes trigger sensors that are on while a workout is in progress, or while a rider is at or above a heart-rate zone, so Home app automations can react when a workout starts, ends, or gets hard: dim the lights when the ride begins, turn on a fan at zone 4, bring the lights back when the class ends.
+A [Homebridge](https://homebridge.io) plugin that turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends. It watches the Peloton accounts in your household and exposes trigger sensors that are on while a workout is in progress: dim the lights when the ride begins, bring them back when the class ends.
 
 Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice.
 
@@ -22,9 +24,8 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 - [Setup](#setup)
   - [1. Connect your accounts](#1-connect-your-accounts)
   - [2. Add a Workout trigger](#2-add-a-workout-trigger)
-  - [3. Add a Heart-rate zone trigger](#3-add-a-heart-rate-zone-trigger)
-  - [4. Set up the fast polling automation](#4-set-up-the-fast-polling-automation)
-  - [5. Settings and Advanced](#5-settings-and-advanced)
+  - [3. Set up the fast polling automation](#3-set-up-the-fast-polling-automation)
+  - [4. Settings and Advanced](#4-settings-and-advanced)
 - [Browser sign-in](#browser-sign-in)
 - [How it works](#how-it-works)
 - [Privacy and what is stored where](#privacy-and-what-is-stored-where)
@@ -37,7 +38,7 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 
 - Homebridge 1.8 or 2.x, with the Homebridge UI for the settings page.
 - Node 20 or later.
-- A Peloton membership. Every profile you want to watch signs in with its own Peloton account; heart-rate zone triggers also need a heart-rate monitor paired to the workout.
+- A Peloton membership. Every profile you want to watch signs in with its own Peloton account.
 
 ## Install
 
@@ -65,19 +66,13 @@ The password is stored in your Homebridge config so the plugin can sign in again
 
 ![A Workout trigger card: name, Occupancy sensor or Switch, who, device, the activity chips, and the keep-on time](assets/screenshots/trigger-workout.png)
 
-Under Triggers, click Add trigger and choose Workout. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (any, Bike, or Tread), and the activities that count; all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
+Under Triggers, click Add trigger. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (any, Bike, Tread, or Guide), and the activities that count; all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
 
 Give the trigger a name (it starts as "Workout"), choose Occupancy sensor or Switch as its HomeKit kind, and click Done. Save, restart Homebridge, and the sensor appears in the Home app under the bridge. In Automations, choose the sensor as the trigger and pick what should happen when it turns on and when it turns off.
 
-### 3. Add a Heart-rate zone trigger
+Heart-rate zone triggers are being refined and are not offered in this release.
 
-![A Heart-rate zone trigger card: the member, the zone, and the hold time](assets/screenshots/trigger-zone.png)
-
-Add trigger, then Heart-rate zone. The sensor is on while the member's heart rate is at or above the zone you choose. Zones come from that member's Peloton profile, and the hold time (20 seconds by default) keeps a short sprint from flicking the sensor on and off. The name follows the zone ("Zone 4 or higher") until you change it.
-
-This trigger needs a heart-rate monitor paired to the workout. Without one the sensor stays off.
-
-### 4. Set up the fast polling automation
+### 3. Set up the fast polling automation
 
 ![The Polling section: the Fast polling switch, the fast and standby intervals, and the automation callout](assets/screenshots/polling.png)
 
@@ -90,7 +85,7 @@ Add two Home app automations:
 
 Any trigger that means "a workout is about to start" works in place of the light: a time of day, a motion sensor, a scene. Without the automation the plugin still works, just at the standby interval, so a workout may be noticed up to two minutes after it starts.
 
-### 5. Settings and Advanced
+### 4. Settings and Advanced
 
 ![The Settings section with Advanced open: the auto-off period, the Attention needed sensor, the daily check-in time, and Restore from backup](assets/screenshots/settings.png)
 
@@ -146,7 +141,6 @@ Node 20 or later. Install with `npm install`, then:
 | `npm run lint` | ESLint over the source, the settings page, the tests, and the config, zero warnings allowed |
 | `npm run build` | Compiles `src/` to `dist/` with TypeScript, including the UI server and the probe |
 | `npm test` | Builds, then runs the node:test suites in `test/` against `dist/` and the settings page |
-| `npm run watch` | Rebuilds on change and restarts a development Homebridge from `test/hbConfig` |
 
 The network is always mocked in tests. Fixtures live under `fixtures/`, sanitised recordings of Peloton's login pages and API answers; see `fixtures/README.md` for what each file stands in for. The settings page is plain HTML, CSS, and ES modules under `homebridge-ui/public/`, served by the Homebridge UI with no build step; it runs on the Homebridge Plugin Shell shared with homebridge-notify-switch (the shell files are listed in [design/README.md](design/README.md)), and its server side is compiled from `src/ui/` and started by `homebridge-ui/server.js`. [SPEC.md](SPEC.md) is the source of truth for behaviour and [design/README.md](design/README.md) for the settings page.
 
@@ -169,11 +163,11 @@ Tokens are stored in `./probe-tokens.json` with mode 0600 and are never printed.
 
 ## Credits
 
-The Peloton API is undocumented, and this plugin stands on the work of people who mapped it before:
+The Peloton API is undocumented, and this plugin stands on the work of people who mapped it before. Each project was read for the endpoints and parameters it documents; this plugin shares no code with any of them, and its sign-in flow was written from observation of Peloton's Auth0 login.
 
-- [peloton-to-garmin](https://github.com/philosowaffle/peloton-to-garmin) for the workout and performance graph endpoints.
-- The [Home Assistant Peloton integration](https://github.com/edwork/homeassistant-peloton-sensor) for the polling approach and the workout status fields.
-- [@dofek/peloton](https://github.com/Asherlc/dofek/tree/main/packages/peloton-client) for the research into Peloton's Auth0 sign-in flow.
+- [peloton-to-garmin](https://github.com/philosowaffle/peloton-to-garmin) (GPL-3.0) for the workout and performance graph endpoints.
+- The [Home Assistant Peloton integration](https://github.com/edwork/homeassistant-peloton-sensor) (Apache-2.0) for the polling approach and the workout status fields.
+- [@dofek/peloton](https://github.com/Asherlc/dofek/tree/main/packages/peloton-client) (MIT) for the research into Peloton's Auth0 sign-in flow.
 
 Built by Alex Rodriguez. If this plugin is useful to you, say hello at [alex-rodriguez.com](https://alex-rodriguez.com/?ref=peloton#building).
 

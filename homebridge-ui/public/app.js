@@ -74,7 +74,7 @@ export class Page {
     this.dirty = false;
     // Peloton page state: the account cards, the trigger cards (which open in place) and the Advanced disclosure.
     this.accountsUi = { panel: null, checking: new Set(), results: new Map(), avatars: new Map() };
-    this.triggersUi = { expanded: new Set(), collapsed: new Set(), chooserOpen: false, cards: new Map() };
+    this.triggersUi = { expanded: new Set(), collapsed: new Set(), cards: new Map() };
     this.settingsUi = { advancedOpen: false };
 
     // The page banner is the first element of the page, served from the plugin's own public folder beside this module.
@@ -186,7 +186,6 @@ export class Page {
     this.shown.clear();
     this.triggersUi.expanded.clear();
     this.triggersUi.collapsed.clear();
-    this.triggersUi.chooserOpen = false;
     if (reason === 'restore') {
       // A restored backup or draft is unsaved work of the user's: it is kept as a draft from here on.
       this.dirty = true;

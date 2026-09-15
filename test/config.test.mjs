@@ -147,17 +147,18 @@ describe('clamping and defaulting', () => {
     ]);
   });
 
-  it('accepts device any, bike, and tread and defaults anything else to any with one warn line', () => {
+  it('accepts device any, bike, tread, and guide and defaults anything else to any with one warn line', () => {
     const { config, warnings } = parse({
       triggers: [
         { id: 't1', type: 'workout', device: 'bike' },
         { id: 't2', type: 'workout', device: 'tread' },
         { id: 't3', type: 'workout' },
         { id: 't4', type: 'workout', device: 'dev-bike-0001' },
+        { id: 't5', type: 'workout', device: 'guide' },
       ],
     });
-    assert.deepEqual(config.triggers.map((trigger) => trigger.device), ['bike', 'tread', 'any', 'any']);
-    assert.deepEqual(warnings, ['triggers[3].device is not "any", "bike", or "tread", using "any"']);
+    assert.deepEqual(config.triggers.map((trigger) => trigger.device), ['bike', 'tread', 'any', 'any', 'guide']);
+    assert.deepEqual(warnings, ['triggers[3].device is not "any", "bike", "tread", or "guide", using "any"']);
   });
 
   it('warns when a heart-rate zone trigger has no account', () => {
