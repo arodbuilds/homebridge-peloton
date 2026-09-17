@@ -80,7 +80,7 @@ const STATUS = {
     { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
     { id: 'dev-guide-0001', name: null, group: 'guide' },
   ],
-  version: '0.1.0-beta.2',
+  version: '1.0.0',
   devicesSeen: [
     { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', name: 'Bike+', known: true },
     { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false },
@@ -481,7 +481,7 @@ describe('devices seen', () => {
   });
 
   it('copies exactly the report text for the row, and shows None seen yet without pairs', async () => {
-    const REPORT = 'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 0.1.0-beta.2';
+    const REPORT = 'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.0';
     const copied = [];
     globalThis.navigator.clipboard = { writeText: async (text) => copied.push(text) };
     try {

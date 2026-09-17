@@ -2,6 +2,30 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.0 (2026-09-17)
+
+The first general release, to the npm latest tag. Every device the test membership can produce is named, the Device filter covers the apps, the plugin records the device codes it sees so a Row or Android report is a copy and paste, and a second workout after the first is caught quickly whether or not the fast polling switch is on.
+
+### Added
+
+- Apple TV and Phone or tablet app as Device options on Workout triggers: `appletv` matches the workout platform `apple_tv` (device_type `apple_tv`), `app` matches platform `iOS_app` or `android_app` when the workout is Peloton originated (device_type `iPhone` or `iPad`; Android as expected, not yet observed). The page, `config.schema.json` and `src/config.ts` offer Any device, Bike, Tread, Guide, Apple TV and Phone or tablet app with the caption "Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. Apple TV and Phone or tablet app are classes taken in the Peloton app."
+- `src/devices.ts`, the one table from device_type to display name: home_bike_v1 Bike, home_bike_plus Bike+, prism Tread, t21n8m2 Guide, apple_tv Apple TV, iPhone iPhone, iPad iPad, apple_health Apple Health import. An unmapped code displays as the raw code.
+- Devices seen: the poller records every device_type and platform pair it observes, with the workout type it was first seen on, on the owner's account file (no workout ids, titles, dates or account details). The first time a pair whose device_type has no display name appears, one info line: "New Peloton device seen: device_type={x}, platform={y}. Open the settings page, Advanced, Devices seen, to report it." The UI server answers `/devices-seen`. The settings page shows a read-only Devices seen block under Advanced after Daily check-in time, each pair as "{display name} ({device_type}, {platform})" with a Known or Unknown tag, a Copy report button on Unknown rows and the privacy caption with a Report it on GitHub link to the new Device report issue form (`.github/ISSUE_TEMPLATE/device-report.yml`, one textarea for the pasted report). The report is the two codes, the discipline and the plugin version, nothing else.
+- `advanced.keepFastAfterEndMinutes`, default 5, minimum 0, under Advanced after Fast polling switch turns off after: "Keep fast polling after a workout ends (minutes)". After any workout ends the poller keeps the fast interval that long, even with the switch off, so a second workout is caught within one fast interval, then follows the switch state.
+- README: the Devices section with the display names and codes, the How I use it section after Setup, and the new Advanced fields.
+- Tests: rules, config, schema and poller tests for the new filters; a devices table suite; poller, UI server, page model and page tests for the devices seen and the copy text; fake clock poller tests for the kept fast interval; a poller test for the log title fallback.
+
+### Changed
+
+- Version 1.0.0 in package.json and the version literals in the tests and the bug report form; the settings page footer reads it from package.json. A GitHub release marked Latest publishes to the npm latest tag through the existing release workflow; a pre-release still goes to the beta tag.
+- README: status line "stable. 1.0.0 is the first general release.", the npm version badge on the latest tag, and install without the beta tag.
+- The strength fixture carries the iPhone app codes as observed (device_type `iPhone`, platform `iOS_app`) in place of the synthesised `iOS` and `ios`.
+- SPEC: the version line, sections 2, 4.2 (the full device table), 5, 6, 7, 8, 10, 11, 13 and 14, section 15 down to Row and Android codes, verification-required accounts and the Heart-rate zone offering, and the 1.0.0 notes in section 16. design/README.md records the Device options, the two new Advanced fields and the Devices seen block.
+
+### Fixed
+
+- The "workout started" log line uses the ride title when there is one, else the workout's title or name, and the discipline alone otherwise, so an app class no longer logs "(strength, )".
+
 ## 0.1.0-beta.2 (2026-09-14)
 
 Beta.2 in two PRs. PR 1: the settings page aligned with the Homebridge Plugin Shell as homebridge-notify-switch v1.3.2 ships it. PR 2: the Guide device option, the Heart-rate zone triggers withdrawn from the settings page for this release, the provenance note on the auth module, the README badges and credits, the CodeQL configuration, and the version.
