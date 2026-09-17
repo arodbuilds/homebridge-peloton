@@ -24,6 +24,7 @@ export const DEFAULTS = {
   holdTime: 20,
   zone: 4,
   fastSwitchAutoOffMinutes: 120,
+  keepFastAfterEndMinutes: 5,
   attentionSensor: false,
   dailyCheckIn: '03:00',
   debug: false,
@@ -34,7 +35,7 @@ export const ACTIVITIES = [
   'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio', 'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
 ];
 
-export const DEVICES = ['any', 'bike', 'tread', 'guide'];
+export const DEVICES = ['any', 'bike', 'tread', 'guide', 'appletv', 'app'];
 
 /**
  * How one device from /status reads on the Devices line: its name with the group after it in
@@ -52,6 +53,20 @@ export function deviceLabel(device) {
 /** The comma-separated device list for the Devices line. */
 export function devicesText(devices) {
   return devices.map(deviceLabel).join(', ');
+}
+
+/**
+ * The text Copy report puts on the clipboard for an Unknown row of the Devices seen block: the two
+ * device codes, the workout type the pair was seen on, and the plugin version. Nothing else.
+ */
+export function deviceReport(device, version) {
+  return [
+    'Unknown Peloton device',
+    `device_type: ${device.deviceType}`,
+    `platform: ${device.platform}`,
+    `discipline: ${device.discipline}`,
+    `plugin: homebridge-peloton ${version}`,
+  ].join('\n');
 }
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -159,6 +174,7 @@ export function readConfig(raw) {
     },
     advanced: {
       fastSwitchAutoOffMinutes: num(advanced.fastSwitchAutoOffMinutes, DEFAULTS.fastSwitchAutoOffMinutes),
+      keepFastAfterEndMinutes: num(advanced.keepFastAfterEndMinutes, DEFAULTS.keepFastAfterEndMinutes),
       attentionSensor: bool(advanced.attentionSensor, DEFAULTS.attentionSensor),
       dailyCheckIn: TIME_PATTERN.test(text(advanced.dailyCheckIn, '')) ? advanced.dailyCheckIn : DEFAULTS.dailyCheckIn,
     },
@@ -259,6 +275,7 @@ export function exportConfig(config, summaries = []) {
     },
     advanced: {
       fastSwitchAutoOffMinutes: whole(config.advanced.fastSwitchAutoOffMinutes, DEFAULTS.fastSwitchAutoOffMinutes),
+      keepFastAfterEndMinutes: Math.max(0, whole(config.advanced.keepFastAfterEndMinutes, DEFAULTS.keepFastAfterEndMinutes)),
       attentionSensor: config.advanced.attentionSensor,
       dailyCheckIn: TIME_PATTERN.test(config.advanced.dailyCheckIn) ? config.advanced.dailyCheckIn : DEFAULTS.dailyCheckIn,
     },
@@ -386,6 +403,9 @@ export function validate(config, options = {}) {
   }
   if (!Number.isFinite(config.advanced.fastSwitchAutoOffMinutes) || config.advanced.fastSwitchAutoOffMinutes < 1) {
     issues.push({ path: 'advanced.fastSwitchAutoOffMinutes', label: settings, message: VALIDATION.minutesFloor });
+  }
+  if (!Number.isFinite(config.advanced.keepFastAfterEndMinutes) || config.advanced.keepFastAfterEndMinutes < 0) {
+    issues.push({ path: 'advanced.keepFastAfterEndMinutes', label: settings, message: VALIDATION.minutesFloorZero });
   }
   if (!TIME_PATTERN.test(config.advanced.dailyCheckIn)) {
     issues.push({ path: 'advanced.dailyCheckIn', label: settings, message: VALIDATION.timeFormat });

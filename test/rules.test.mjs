@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getPerformanceGraph } from '../dist/api/peloton-api.js';
 import {
+  APP_PLATFORMS,
   HoldAfterEnd,
   HoldState,
   PLATFORM_BY_DEVICE,
@@ -40,6 +41,16 @@ function onTread(workout) {
 /** A Guide class as observed on 11 September 2026: device_type t21n8m2, platform tiger. */
 function onGuide(workout) {
   return { ...workout, fitnessDiscipline: 'strength', deviceType: 't21n8m2', platform: 'tiger' };
+}
+
+/** A class taken in the Apple TV app as observed on September 16, 2026: device_type apple_tv, platform apple_tv. */
+function onAppleTv(workout) {
+  return { ...workout, fitnessDiscipline: 'yoga', deviceType: 'apple_tv', platform: 'apple_tv' };
+}
+
+/** A class taken in the iPad app as observed on September 16, 2026: device_type iPad, platform iOS_app. */
+function onIpad(workout) {
+  return { ...workout, fitnessDiscipline: 'strength', deviceType: 'iPad', platform: 'iOS_app' };
 }
 
 describe('isDetectable', () => {
@@ -87,8 +98,9 @@ describe('workoutMatches', () => {
     assert.equal(workoutMatches(trigger(), odd, OWNER), true);
   });
 
-  it('maps the bike filter to platform home_bike, the tread filter to home_tread, and the guide filter to tiger', () => {
-    assert.deepEqual(PLATFORM_BY_DEVICE, { bike: 'home_bike', tread: 'home_tread', guide: 'tiger' });
+  it('maps bike to platform home_bike, tread to home_tread, guide to tiger, appletv to apple_tv, and app to the app platforms', () => {
+    assert.deepEqual(PLATFORM_BY_DEVICE, { bike: 'home_bike', tread: 'home_tread', guide: 'tiger', appletv: 'apple_tv' });
+    assert.deepEqual(APP_PLATFORMS, ['iOS_app', 'android_app']);
   });
 
   it('matches a Bike+ ride (device_type home_bike_plus, platform home_bike) for bike and any but not tread', async () => {
@@ -99,6 +111,8 @@ describe('workoutMatches', () => {
     assert.equal(deviceMatches('bike', cycling), true);
     assert.equal(deviceMatches('tread', cycling), false);
     assert.equal(deviceMatches('guide', cycling), false);
+    assert.equal(deviceMatches('appletv', cycling), false);
+    assert.equal(deviceMatches('app', cycling), false);
     assert.equal(workoutMatches(trigger({ device: 'bike' }), cycling, OWNER), true);
     assert.equal(workoutMatches(trigger({ device: 'tread' }), cycling, OWNER), false);
     assert.equal(workoutMatches(trigger({ device: 'any' }), cycling, OWNER), true);
@@ -127,21 +141,55 @@ describe('workoutMatches', () => {
     assert.equal(workoutMatches(trigger({ device: 'tread' }), guide, OWNER), false);
   });
 
-  it('matches an app workout or an Apple Health import (platform iOS_app) only for any', async () => {
-    const strength = await workoutFixture('workout-in-progress-strength');
-    assert.equal(deviceMatches('bike', strength), false);
-    assert.equal(deviceMatches('tread', strength), false);
-    assert.equal(deviceMatches('guide', strength), false);
-    assert.equal(deviceMatches('any', strength), true);
+  it('matches an Apple TV class (device_type apple_tv, platform apple_tv) for appletv and any only', async () => {
+    const tv = onAppleTv(await workoutFixture('workout-in-progress-cycling'));
+    assert.equal(deviceMatches('appletv', tv), true);
+    assert.equal(deviceMatches('any', tv), true);
+    assert.equal(deviceMatches('app', tv), false);
+    assert.equal(deviceMatches('bike', tv), false);
+    assert.equal(deviceMatches('tread', tv), false);
+    assert.equal(deviceMatches('guide', tv), false);
+    assert.equal(workoutMatches(trigger({ device: 'appletv' }), tv, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'appletv', activities: ['yoga'] }), tv, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'app' }), tv, OWNER), false);
+  });
+
+  it('matches an iPhone, iPad, or Android app class (platform iOS_app or android_app, Peloton originated) for app and any only', async () => {
+    const iphone = await workoutFixture('workout-in-progress-strength');
+    assert.equal(iphone.deviceType, 'iPhone');
+    assert.equal(iphone.platform, 'iOS_app');
+    assert.equal(iphone.isPelotonOriginatedWorkout, true);
+    const ipad = onIpad(await workoutFixture('workout-in-progress-cycling'));
+    const android = { ...ipad, deviceType: 'android', platform: 'android_app' };
+    for (const workout of [iphone, ipad, android]) {
+      assert.equal(deviceMatches('app', workout), true, workout.deviceType);
+      assert.equal(deviceMatches('any', workout), true);
+      assert.equal(deviceMatches('appletv', workout), false);
+      assert.equal(deviceMatches('bike', workout), false);
+      assert.equal(deviceMatches('tread', workout), false);
+      assert.equal(deviceMatches('guide', workout), false);
+    }
+    assert.equal(workoutMatches(trigger({ device: 'app' }), iphone, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'app', activities: ['strength'] }), iphone, OWNER), true);
+    assert.equal(workoutMatches(trigger({ device: 'app', activities: ['cycling'] }), iphone, OWNER), false);
+    // A platform the plugin has not seen matches only "any".
+    assert.equal(deviceMatches('app', { ...iphone, platform: 'web' }), false);
+    assert.equal(deviceMatches('any', { ...iphone, platform: 'web' }), true);
+  });
+
+  it('matches an Apple Health import (platform iOS_app, not Peloton originated) only for any', async () => {
     const imported = await workoutFixture('workout-3p-fit-feed-running');
     assert.equal(imported.deviceType, 'apple_health');
     assert.equal(imported.platform, 'iOS_app');
+    assert.equal(imported.isPelotonOriginatedWorkout, false);
+    assert.equal(deviceMatches('app', imported), false);
+    assert.equal(deviceMatches('appletv', imported), false);
     assert.equal(deviceMatches('bike', imported), false);
     assert.equal(deviceMatches('tread', imported), false);
     assert.equal(deviceMatches('guide', imported), false);
     assert.equal(deviceMatches('any', imported), true);
     // An unknown filter value never matches; config.ts replaces it with "any" before it gets here.
-    assert.equal(deviceMatches('rower', strength), false);
+    assert.equal(deviceMatches('rower', imported), false);
   });
 
   it('checks who and activities before the device, so an excluded workout never matches on device alone', async () => {

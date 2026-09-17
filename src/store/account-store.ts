@@ -37,6 +37,17 @@ export interface StoredDevice {
   group: string;
 }
 
+/**
+ * A device_type and platform pair the poller has seen on the membership (SPEC section 7), with the
+ * fitness discipline of the workout it was first seen on. Never a workout id, title, date, or
+ * account detail: this is what the Devices seen block shows and what a device report carries.
+ */
+export interface SeenDevice {
+  deviceType: string;
+  platform: string;
+  discipline: string;
+}
+
 export interface AccountRecord {
   userId?: string;
   username?: string;
@@ -55,6 +66,8 @@ export interface AccountRecord {
   devices?: StoredDevice[];
   /** Epoch milliseconds of the subscriptions read that last wrote devices and the household profiles; owner only. */
   householdFetchedAt?: number;
+  /** Every device_type and platform pair seen on the membership, on the owner's record (SPEC sections 7 and 8.2). */
+  devicesSeen?: SeenDevice[];
   state: AccountState;
   lastCheckedAt?: number;
   lastError?: LastError;

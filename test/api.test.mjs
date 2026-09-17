@@ -201,8 +201,8 @@ describe('getLatestWorkout', () => {
     const workout = await getLatestWorkout('u-member-0003', TOKEN, fetchImpl);
     assert.equal(workout.id, 'w-str-0002');
     assert.equal(workout.fitnessDiscipline, 'strength');
-    assert.equal(workout.deviceType, 'iOS');
-    assert.equal(workout.platform, 'ios');
+    assert.equal(workout.deviceType, 'iPhone');
+    assert.equal(workout.platform, 'iOS_app');
     assert.equal(workout.title, '20 min Full Body Strength');
     assert.equal(workout.ride.instructorId, 'redacted-instructor');
   });

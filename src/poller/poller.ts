@@ -11,8 +11,9 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
+import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
-import type { AccountRecord, AccountState } from '../store/account-store.js';
+import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
 import { HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, workoutMatches, zoneBounds, zoneForSample } from './rules.js';
 
 export type PollerState = 'standby' | 'scanning' | 'locked' | 'released';
@@ -148,6 +149,21 @@ export const GRAPH_EVERY_N = 5;
 export const STALE_SAMPLE_POLLS = 2;
 
 /**
+ * What the "workout started" line says in brackets (SPEC section 11): the discipline, then the class
+ * title when there is one (ride.title, else the workout's title, else its name), so an app class
+ * without a ride title logs the discipline alone rather than an empty title.
+ */
+export function workoutLabel(workout: Workout): string {
+  const title = (workout.ride?.title || workout.title || workout.name).trim();
+  return title.length > 0 ? `${workout.fitnessDiscipline}, ${title}` : workout.fitnessDiscipline;
+}
+
+/** The key a device_type and platform pair is remembered by. */
+function seenKey(deviceType: string, platform: string): string {
+  return `${deviceType}\n${platform}`;
+}
+
+/**
  * Epoch milliseconds of the next occurrence of a local "HH:MM" time strictly after now, using the
  * process time zone. A malformed time falls back to 03:00.
  */
@@ -233,6 +249,12 @@ export class Poller {
   private lastWorkoutEndAt: number | undefined;
   private autoOffTimer: unknown;
   private checkInTimer: unknown;
+  /** The end of the fast interval kept after the last workout end (SPEC section 8.4), and its timer. */
+  private fastUntil: number | undefined;
+  private keepFastTimer: unknown;
+  /** Every device_type and platform pair already recorded (SPEC section 8.2), loaded from the store on first use. */
+  private seenDevices: Set<string> | undefined;
+  private seenDevicesLoading: Promise<Set<string>> | undefined;
 
   constructor(options: PollerOptions) {
     this.config = options.config;
@@ -312,6 +334,8 @@ export class Poller {
     this.started = false;
     this.generation += 1;
     this.clearAutoOff();
+    this.clearKeepFast();
+    this.fastUntil = undefined;
     if (this.checkInTimer !== undefined) {
       this.scheduler.clearTimer(this.checkInTimer);
       this.checkInTimer = undefined;
@@ -350,6 +374,11 @@ export class Poller {
     const run = this.runCheckIn();
     this.track(run);
     return run;
+  }
+
+  /** When the fast interval kept after the last workout end runs out, or undefined while none is running. */
+  get keepFastUntil(): number | undefined {
+    return this.fastUntil !== undefined && this.fastUntil > this.now() ? this.fastUntil : undefined;
   }
 
   /** When the auto-off timer will fire, or undefined while the switch is off. */
@@ -412,6 +441,39 @@ export class Poller {
     this.emit('switchAutoOff', { minutes });
     this.emit('switchChanged', { on: false, reason: 'auto' });
     this.applySwitchChange();
+  }
+
+  /* ----------------------------------------------------------------------------------------------
+   * Fast interval kept after a workout ends (SPEC section 8.4)
+   * -------------------------------------------------------------------------------------------- */
+
+  /**
+   * Keeps the fast interval for keepFastAfterEndMinutes after a workout ends, whatever the switch,
+   * so a second workout is caught within one fast interval. When the window closes with the switch
+   * off, the household goes back on the standby schedule; with it on, nothing changes.
+   */
+  private armKeepFast(): void {
+    this.clearKeepFast();
+    const ms = this.config.advanced.keepFastAfterEndMinutes * 60_000;
+    if (ms <= 0) {
+      this.fastUntil = undefined;
+      return;
+    }
+    this.fastUntil = this.now() + ms;
+    this.keepFastTimer = this.scheduler.setTimer(() => {
+      this.keepFastTimer = undefined;
+      this.fastUntil = undefined;
+      if (this.started && !this.switchIsOn && (this.currentState === 'standby' || this.currentState === 'scanning')) {
+        this.scheduleAll(false);
+      }
+    }, ms);
+  }
+
+  private clearKeepFast(): void {
+    if (this.keepFastTimer !== undefined) {
+      this.scheduler.clearTimer(this.keepFastTimer);
+      this.keepFastTimer = undefined;
+    }
   }
 
   /* ----------------------------------------------------------------------------------------------
@@ -490,9 +552,9 @@ export class Poller {
     this.emit('stateChanged', { state });
   }
 
-  /** The interval for standby or scanning in seconds, 0 for no polling. */
+  /** The interval for standby or scanning in seconds, 0 for no polling: fast while the switch is on or a workout ended recently (8.4). */
   private listInterval(): number {
-    return this.switchIsOn ? this.config.polling.fastInterval : this.config.polling.standbyInterval;
+    return this.switchIsOn || this.keepFastUntil !== undefined ? this.config.polling.fastInterval : this.config.polling.standbyInterval;
   }
 
   private applySwitchChange(): void {
@@ -628,6 +690,9 @@ export class Poller {
     const { account } = runtime;
     const workout = await this.store.withValidToken(account.id, (token) => this.api.getLatestWorkout(account.userId, token));
     this.debugWorkout(runtime, workout);
+    if (workout !== null) {
+      await this.recordDeviceSeen(runtime, workout);
+    }
     if (!isDetectable(workout)) {
       return;
     }
@@ -645,6 +710,7 @@ export class Poller {
     const workoutId = this.lockedWorkoutId as string;
     const workout = await this.store.withValidToken(account.id, (token) => this.api.getWorkout(workoutId, token));
     this.debugWorkout(runtime, workout);
+    await this.recordDeviceSeen(runtime, workout);
     runtime.latestWorkout = workout;
     if (workout.status === 'COMPLETE') {
       this.endWorkout(runtime);
@@ -671,6 +737,72 @@ export class Poller {
     } catch (error) {
       this.log.debug(`${account.displayName}: could not record the poll time (${error instanceof Error ? error.message : String(error)})`);
     }
+  }
+
+  /**
+   * Records the workout's device_type and platform pair the first time it is seen (SPEC section
+   * 8.2): the two codes and the fitness discipline of that workout, on the owner's record when the
+   * store knows one, else on the polled account's record. Never a workout id, title, date, or
+   * account detail. A pair whose device_type has no display name (src/devices.ts) logs one info
+   * line asking for a report. A failure to persist is logged at debug and is not a poll failure.
+   */
+  private async recordDeviceSeen(runtime: AccountRuntime, workout: Workout): Promise<void> {
+    if (workout.deviceType.length === 0 && workout.platform.length === 0) {
+      return;
+    }
+    const key = seenKey(workout.deviceType, workout.platform);
+    try {
+      const seen = await this.loadSeenDevices();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      if (!isKnownDevice(workout.deviceType)) {
+        this.log.info(
+          `New Peloton device seen: device_type=${workout.deviceType}, platform=${workout.platform}.`
+          + ' Open the settings page, Advanced, Devices seen, to report it.',
+        );
+      }
+      let targetId = runtime.account.id;
+      for (const [id, record] of await this.store.loadAll()) {
+        if (record.isOwner === true) {
+          targetId = id;
+          break;
+        }
+      }
+      const record = await this.store.load(targetId);
+      if (record === undefined) {
+        return;
+      }
+      const existing = record.devicesSeen ?? [];
+      if (existing.some((entry) => seenKey(entry.deviceType, entry.platform) === key)) {
+        return;
+      }
+      const entry: SeenDevice = { deviceType: workout.deviceType, platform: workout.platform, discipline: workout.fitnessDiscipline };
+      await this.store.save(targetId, { ...record, devicesSeen: [...existing, entry] });
+    } catch (error) {
+      this.log.debug(`${runtime.account.displayName}: could not record the device seen (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+
+  /** The pairs every stored record already carries, read once and kept in memory. */
+  private loadSeenDevices(): Promise<Set<string>> {
+    if (this.seenDevices !== undefined) {
+      return Promise.resolve(this.seenDevices);
+    }
+    this.seenDevicesLoading ??= this.store.loadAll().then((records) => {
+      const seen = new Set<string>();
+      for (const record of records.values()) {
+        for (const entry of record.devicesSeen ?? []) {
+          seen.add(seenKey(entry.deviceType, entry.platform));
+        }
+      }
+      this.seenDevices = seen;
+      return seen;
+    }).finally(() => {
+      this.seenDevicesLoading = undefined;
+    });
+    return this.seenDevicesLoading;
   }
 
   private handlePollError(runtime: AccountRuntime, error: unknown): 'failed' | 'dropped' {
@@ -747,7 +879,7 @@ export class Poller {
     }
     this.generation += 1;
     this.setState('locked');
-    this.log.info(`${account.displayName}: workout started (${workout.fitnessDiscipline}, ${workout.title})`);
+    this.log.info(`${account.displayName}: workout started (${workoutLabel(workout)})`);
     this.emit('workoutStarted', { accountId: account.id, userId: account.userId, displayName: account.displayName, workout });
 
     for (const trigger of this.triggers) {
@@ -775,6 +907,7 @@ export class Poller {
     if (this.switchIsOn) {
       this.armAutoOff();
     }
+    this.armKeepFast();
     this.log.info(`${account.displayName}: workout ended`);
     this.emit('workoutEnded', { accountId: account.id, userId: account.userId, displayName: account.displayName, workoutId });
     for (const trigger of this.triggers) {

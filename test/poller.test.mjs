@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { AuthError } from '../dist/auth/peloton-auth.js';
 import { parseConfig } from '../dist/config.js';
-import { Poller, backoffInterval, nextLocalTime } from '../dist/poller/poller.js';
+import { Poller, backoffInterval, nextLocalTime, workoutLabel } from '../dist/poller/poller.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
 import { apiFixture, apiResponse, jsonResponse } from './helpers/fixtures.mjs';
@@ -160,6 +160,26 @@ describe('standby', () => {
     assert.equal(h.poller.state, 'standby');
   });
 
+  it('logs the ride title when there is one, else the workout title or name, else the discipline alone', async () => {
+    const cycling = apiFixture('workout-in-progress-cycling').data[0];
+    const parsed = (extra) => ({ fitnessDiscipline: 'strength', title: '', name: '', ride: null, ...extra });
+    const ride = { id: 'r', title: cycling.ride.title, duration: 1800 };
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'cycling', title: cycling.title, name: cycling.name, ride })), 'cycling, 30 min Power Zone Ride');
+    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout', ride: { id: 'r', title: 'Bodyweight Strength', duration: 600 } })),
+      'strength, Bodyweight Strength');
+    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout' })), 'strength, Just Work Out');
+    assert.equal(workoutLabel(parsed({ name: 'Strength Workout', ride: { id: 'r', title: '', duration: null } })), 'strength, Strength Workout');
+    assert.equal(workoutLabel(parsed({ title: '  ' })), 'strength');
+
+    // An app class with no ride title and empty title and name no longer logs "(strength, )".
+    const h = await harness({ accounts: [OWNER] });
+    const appClass = { fitness_discipline: 'strength', device_type: 'iPhone', platform: 'iOS_app', title: '', name: '', ride: null };
+    h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', appClass)).route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(h.lines.info, ['Owner: workout started (strength)', 'Workout: on']);
+  });
+
   it('counts a workout already in progress at startup as started on the first poll', async () => {
     const h = await harness({ accounts: [OWNER] });
     h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
@@ -271,13 +291,16 @@ describe('lock-on', () => {
       workoutTrigger({ id: 't-run', activities: ['running'] }),
       workoutTrigger({ id: 't-bike', device: 'bike' }),
       workoutTrigger({ id: 't-tread', device: 'tread' }),
+      workoutTrigger({ id: 't-tv', device: 'appletv' }),
+      workoutTrigger({ id: 't-app', device: 'app' }),
     ];
+    const states = (h) => Object.fromEntries(h.poller.triggerStates);
     // A Bike+ ride: device_type home_bike_plus, platform home_bike.
     const bike = await harness({ accounts: [OWNER], config: { triggers } });
     bike.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
     bike.poller.start();
     await bike.clock.advance(0);
-    assert.deepEqual([...bike.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', true], ['t-tread', false]]);
+    assert.deepEqual(states(bike), { 't-any': true, 't-member': false, 't-run': false, 't-bike': true, 't-tread': false, 't-tv': false, 't-app': false });
     assert.match(bike.lines.debug[0], /device_type=home_bike_plus platform=home_bike$/);
     bike.poller.stop();
 
@@ -287,18 +310,28 @@ describe('lock-on', () => {
       .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
     tread.poller.start();
     await tread.clock.advance(0);
-    assert.deepEqual([...tread.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', true], ['t-bike', false], ['t-tread', true]]);
+    assert.deepEqual(states(tread), { 't-any': true, 't-member': false, 't-run': true, 't-bike': false, 't-tread': true, 't-tv': false, 't-app': false });
     assert.match(tread.lines.debug[0], /device_type=prism platform=home_tread$/);
     tread.poller.stop();
 
-    // An app workout matches neither hardware filter; nothing about devices is logged at info.
+    // A class in the iPhone app (device_type iPhone, platform iOS_app) matches the app filter, not the hardware ones or Apple TV.
     const app = await harness({ accounts: [OWNER], config: { triggers } });
-    app.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iOS', platform: 'ios' }))
+    app.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iPhone', platform: 'iOS_app' }))
       .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
     app.poller.start();
     await app.clock.advance(0);
-    assert.deepEqual([...app.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', false], ['t-tread', false]]);
-    assert.equal(app.lines.info.some((line) => line.includes('device')), false);
+    assert.deepEqual(states(app), { 't-any': true, 't-member': false, 't-run': false, 't-bike': false, 't-tread': false, 't-tv': false, 't-app': true });
+    assert.match(app.lines.debug[0], /device_type=iPhone platform=iOS_app$/);
+    app.poller.stop();
+
+    // A class on the Apple TV app (device_type apple_tv, platform apple_tv) matches the Apple TV filter only.
+    const tv = await harness({ accounts: [OWNER], config: { triggers } });
+    tv.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'yoga', device_type: 'apple_tv', platform: 'apple_tv' }))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    tv.poller.start();
+    await tv.clock.advance(0);
+    assert.deepEqual(states(tv), { 't-any': true, 't-member': false, 't-run': false, 't-bike': false, 't-tread': false, 't-tv': true, 't-app': false });
+    assert.equal(tv.lines.info.some((line) => line.includes('device')), false);
   });
 });
 
@@ -732,6 +765,119 @@ describe('fast polling switch auto-off', () => {
   });
 });
 
+describe('keep fast polling after a workout ends', () => {
+  const MINUTE = 60_000;
+
+  /** Locks on the cycling ride with the switch off, then ends it. Returns the harness with the end time. */
+  async function ended(config = {}, switchOn = false) {
+    const h = await harness({ accounts: [OWNER], config });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    h.poller.start();
+    if (switchOn) {
+      h.poller.setSwitch(true);
+    }
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    assert.equal(h.poller.keepFastUntil, undefined);
+    h.fetch.route(WORKOUT_CYC, apiResponse('workout-single-complete-cycling')).route(LIST_OWNER, apiResponse('workout-complete-cycling'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 1);
+    h.endedAt = h.clock.now();
+    return h;
+  }
+
+  it('keeps the fast interval for keepFastAfterEndMinutes after the end with the switch off, then goes back to standby polling', async () => {
+    const h = await ended();
+    assert.equal(h.poller.switchOn, false);
+    assert.equal(h.poller.keepFastUntil, h.endedAt + 5 * MINUTE);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby', 'the hold ran out and the switch is off');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    const fastPolls = h.fetch.count(LIST_OWNER) - afterHold;
+    assert.ok(fastPolls >= 5 && fastPolls <= 7, `polls at the fast interval while the window is open: ${fastPolls}`);
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    assert.equal(h.poller.keepFastUntil, undefined);
+    const atClose = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(119_000);
+    assert.equal(h.fetch.count(LIST_OWNER), atClose, 'the standby interval applies once the window closes');
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), atClose + 1);
+    assert.equal(h.poller.state, 'standby');
+    assert.deepEqual(h.named('stateChanged').map((event) => event.state), ['locked', 'released', 'standby']);
+  });
+
+  it('catches a second workout within one fast interval during the window, and the window restarts from its end', async () => {
+    const h = await ended();
+    await h.clock.advance(2 * MINUTE);
+    assert.equal(h.poller.state, 'standby');
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0009', 'IN_PROGRESS')).route(/\/api\/workout\/w-cyc-0009$/, workoutBody('w-cyc-0009', 'IN_PROGRESS'));
+    await h.clock.advance(10_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.deepEqual(h.named('workoutStarted').map((event) => event.workout.id), ['w-cyc-0001', 'w-cyc-0009']);
+    await h.clock.advance(4 * MINUTE);
+    assert.equal(h.poller.state, 'locked', 'the first window closing does not touch a locked workout');
+    h.fetch.route(/\/api\/workout\/w-cyc-0009$/, workoutBody('w-cyc-0009', 'COMPLETE')).route(LIST_OWNER, listBody('w-cyc-0009', 'COMPLETE'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 2);
+    assert.equal(h.poller.keepFastUntil, h.clock.now() + 5 * MINUTE);
+  });
+
+  it('polls at the standby interval at once with keepFastAfterEndMinutes 0', async () => {
+    const h = await ended({ advanced: { keepFastAfterEndMinutes: 0 } });
+    assert.equal(h.poller.keepFastUntil, undefined);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(119_000);
+    assert.equal(h.fetch.count(LIST_OWNER), afterHold);
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), afterHold + 1);
+  });
+
+  it('changes nothing while the switch is on, and a switch turned off during the window keeps the fast interval until it closes', async () => {
+    const h = await ended({}, true);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'scanning');
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    assert.equal(h.poller.keepFastUntil, undefined);
+    const atClose = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    assert.ok(h.fetch.count(LIST_OWNER) - atClose >= 5, 'still scanning at the fast interval');
+
+    const off = await ended({ advanced: { keepFastAfterEndMinutes: 10 } }, true);
+    await off.clock.advance(90_000);
+    off.poller.setSwitch(false);
+    assert.equal(off.poller.state, 'standby');
+    await off.clock.advance(0);
+    const afterOff = off.fetch.count(LIST_OWNER);
+    await off.clock.advance(MINUTE);
+    assert.ok(off.fetch.count(LIST_OWNER) - afterOff >= 5, 'the fast interval survives the switch turning off while the window is open');
+    await off.clock.advance(off.endedAt + 10 * MINUTE - off.clock.now());
+    const closed = off.fetch.count(LIST_OWNER);
+    await off.clock.advance(119_000);
+    assert.equal(off.fetch.count(LIST_OWNER), closed);
+  });
+
+  it('never polls after the window closes when standby is 0, and stop cancels the window timer', async () => {
+    // With standby 0 the ride is found with the switch on; the switch goes off as soon as the ride ends.
+    const h = await ended({ polling: { standbyInterval: 0 } }, true);
+    h.poller.setSwitch(false);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    assert.ok(h.fetch.count(LIST_OWNER) > afterHold, 'fast polling runs during the window even with standby 0');
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    const closed = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(HOUR);
+    assert.equal(h.fetch.count(LIST_OWNER), closed);
+    const again = await ended();
+    again.poller.stop();
+    assert.deepEqual(again.clock.pending(), []);
+  });
+});
+
 describe('daily check-in', () => {
   function expectedCheckIn(now, time = '03:00') {
     const [hours, minutes] = time.split(':').map(Number);
@@ -905,6 +1051,66 @@ describe('last checked', () => {
     assert.equal(record.refreshToken, 'refresh-1', 'the write keeps the rest of the record');
     assert.equal(record.state, 'connected');
     assert.deepEqual(h.lines.warn, []);
+  });
+});
+
+describe('devices seen', () => {
+  const seen = (h, id) => readRecord(h.store, id).devicesSeen;
+  const newDeviceLines = (h) => h.lines.info.filter((line) => line.startsWith('New Peloton device seen'));
+
+  it('records every device_type and platform pair once on the owner record, imports included, and logs nothing for known codes', async () => {
+    const h = await harness({ records: { a1: { isOwner: true } } });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-complete-cycling')).route(LIST_MEMBER, apiResponse('workout-in-progress-strength'))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' }]);
+    await h.clock.advance(60_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.deepEqual(seen(h, 'a1'), [
+      { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' },
+      { deviceType: 'iPhone', platform: 'iOS_app', discipline: 'strength' },
+    ], 'the member workout lands on the owner record');
+    assert.equal(seen(h, 'a2'), undefined);
+    await h.clock.advance(30_000);
+    assert.equal(seen(h, 'a1').length, 2, 'the locked polls of the same workout add nothing');
+    const record = readRecord(h.store, 'a1');
+    assert.equal(JSON.stringify(record).includes('w-str-0002'), false, 'no workout id');
+    assert.equal(JSON.stringify(record).includes('Strength Workout'), false, 'no title');
+    assert.deepEqual(newDeviceLines(h), [], 'every code here has a display name');
+
+    // An Apple Health import is recorded too, though detection ignores it.
+    h.fetch.route(WORKOUT_STR, workoutBody('w-str-0002', 'COMPLETE')).route(LIST_MEMBER, listBody('w-str-0002', 'COMPLETE'));
+    await h.clock.advance(100_000);
+    h.fetch.route(LIST_OWNER, apiResponse('workout-3p-fit-feed-running'));
+    await h.clock.advance(240_000);
+    assert.deepEqual(seen(h, 'a1').at(-1), { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running' });
+    assert.equal(seen(h, 'a1').length, 3);
+    assert.deepEqual(newDeviceLines(h), []);
+  });
+
+  it('logs one info line the first time an unknown code appears, on the polled account when no owner is known, and never again', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, listBody('w-row-0001', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(newDeviceLines(h), [
+      'New Peloton device seen: device_type=row_v1, platform=home_row. Open the settings page, Advanced, Devices seen, to report it.',
+    ]);
+    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing' }]);
+    await h.clock.advance(600_000);
+    assert.equal(newDeviceLines(h).length, 1);
+    assert.equal(seen(h, 'a1').length, 1);
+    assert.equal(readRecord(h.store, 'a1').refreshToken, 'refresh-1', 'the write keeps the rest of the record');
+    h.poller.stop();
+
+    // After a restart the pair is read back from the store, so it is not reported a second time.
+    const again = await harness({ accounts: [OWNER], records: { a1: { devicesSeen: seen(h, 'a1') } } });
+    again.fetch.route(LIST_OWNER, listBody('w-row-0002', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    again.poller.start();
+    await again.clock.advance(120_000);
+    assert.deepEqual(newDeviceLines(again), []);
+    assert.equal(seen(again, 'a1').length, 1);
   });
 });
 

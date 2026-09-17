@@ -8,7 +8,7 @@ body:
     attributes:
       label: Plugin version
       description: Shown in the footer of the plugin settings page.
-      placeholder: "0.1.0-beta.2"
+      placeholder: "1.0.0"
     validations:
       required: true
   - type: input

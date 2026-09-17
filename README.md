@@ -6,7 +6,7 @@ Do not claim it. Once the plugin is verified, replace this comment with the badg
 [![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 -->
 
-[![npm version](https://img.shields.io/npm/v/homebridge-peloton/beta)](https://www.npmjs.com/package/homebridge-peloton)
+[![npm version](https://img.shields.io/npm/v/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
 [![npm downloads](https://img.shields.io/npm/dt/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
 [![License](https://img.shields.io/github/license/arodbuilds/homebridge-peloton)](LICENSE)
 [![Build, lint, and test](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml/badge.svg)](https://github.com/arodbuilds/homebridge-peloton/actions/workflows/build.yml)
@@ -15,7 +15,7 @@ A [Homebridge](https://homebridge.io) plugin that turns Peloton workouts into Ho
 
 Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice.
 
-> **Status:** Beta. Please report what works and what does not in the [issue tracker](https://github.com/arodbuilds/homebridge-peloton/issues).
+> **Status:** stable. 1.0.0 is the first general release.
 
 ## Contents
 
@@ -26,8 +26,10 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
   - [2. Add a Workout trigger](#2-add-a-workout-trigger)
   - [3. Set up the fast polling automation](#3-set-up-the-fast-polling-automation)
   - [4. Settings and Advanced](#4-settings-and-advanced)
+- [How I use it](#how-i-use-it)
 - [Browser sign-in](#browser-sign-in)
 - [How it works](#how-it-works)
+- [Devices](#devices)
 - [Privacy and what is stored where](#privacy-and-what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -42,10 +44,10 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 
 ## Install
 
-Search for "Peloton" under Plugins in the Homebridge UI and install the beta, or from a shell on the Homebridge host:
+Search for "Peloton" under Plugins in the Homebridge UI and install it, or from a shell on the Homebridge host:
 
 ```shell
-npm install -g homebridge-peloton@beta
+npm install -g homebridge-peloton
 ```
 
 Then open the plugin's settings from the Plugins page. Everything in the setup below happens on that page. The host's Save button writes config.json and Homebridge restarts the plugin.
@@ -66,7 +68,7 @@ The password is stored in your Homebridge config so the plugin can sign in again
 
 ![A Workout trigger card: name, Occupancy sensor or Switch, who, device, the activity chips, and the keep-on time](assets/screenshots/trigger-workout.png)
 
-Under Triggers, click Add trigger. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (any, Bike, Tread, or Guide), and the activities that count; all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
+Under Triggers, click Add trigger. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (Any device, Bike, Tread, Guide, Apple TV, or Phone or tablet app; see [Devices](#devices)), and the activities that count; all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
 
 Give the trigger a name (it starts as "Workout"), choose Occupancy sensor or Switch as its HomeKit kind, and click Done. Save, restart Homebridge, and the sensor appears in the Home app under the bridge. In Automations, choose the sensor as the trigger and pick what should happen when it turns on and when it turns off.
 
@@ -76,7 +78,7 @@ Heart-rate zone triggers are being refined and are not offered in this release.
 
 ![The Polling section: the Fast polling switch, the fast and standby intervals, and the automation callout](assets/screenshots/polling.png)
 
-The plugin creates a switch called Peloton fast polling. While it is on, the plugin checks every account every 10 seconds, locks onto the first workout it sees, and follows it to the end. While it is off, it polls at the standby interval, 120 seconds by default; 0 turns standby polling off entirely. The switch turns itself off after 120 minutes, counted from the later of turning on and the last workout ending.
+The plugin creates a switch called Peloton fast polling. While it is on, the plugin checks every account every 10 seconds, locks onto the first workout it sees, and follows it to the end. While it is off, it polls at the standby interval, 120 seconds by default; 0 turns standby polling off entirely. The switch turns itself off after 120 minutes, counted from the later of turning on and the last workout ending. After any workout ends the plugin keeps checking every 10 seconds for 5 minutes, whether the switch is on or off, so a second workout is caught quickly; both periods are set under Advanced.
 
 Add two Home app automations:
 
@@ -94,9 +96,21 @@ Settings holds one Advanced disclosure, collapsed until something inside it is c
 - Name: the plugin name, shown in Homebridge logs and as the bridge name in the Home app.
 - Debug logging: logs every poll and the workout data it returns; sign-in details and session tokens are never logged.
 - Fast polling switch turns off after: the auto-off period in minutes.
+- Keep fast polling after a workout ends: how many minutes the plugin keeps the fast interval after any workout ends, even with the switch off, so a second workout is caught quickly. 5 by default, 0 turns it off.
 - Attention needed sensor: an occupancy sensor that is on while any account needs to be reconnected, for an automation that sends you a notification.
 - Daily check-in time: once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out.
+- Devices seen: a read-only list of the device codes the plugin has seen on your membership, each tagged Known or Unknown. An Unknown row has a Copy report button; see [Devices](#devices).
 - Restore from backup: loads a saved Peloton platform block, a whole config.json, or a saved draft of this page.
+
+## How I use it
+
+My workouts start the same way every time: I turn on the gym light. A Home automation turns on the Peloton fast polling switch when that light comes on, so by the time I have clipped in the plugin is already checking every ten seconds. I do not use an automation to turn the switch off; the "Fast polling switch turns off after" setting under Advanced is set to 15 minutes, so polling winds down on its own after my last workout ends, and back-to-back sessions are caught without a gap.
+
+One Workout trigger set to Any device drives the room: when it turns on, a scene sets the lights and the fan; when it turns off, another scene puts the room back. Because the trigger stays on for the whole workout, one sensor gives me both ends.
+
+For different rooms I use the Device filter: a Bike trigger and a Tread trigger each drive their own scene, and a Phone or tablet app trigger handles classes I take in the living room on the Apple TV or on the iPad. A trigger set to Any device also fires when I start a class on my phone away from home, which is fine for me; if you do not want that, use the device filters instead.
+
+The family each connected their own profile, and a per-person Workout trigger lets each of us have our own scene.
 
 ## Browser sign-in
 
@@ -114,7 +128,27 @@ If Back does not show the callback address, long-press the Back button and pick 
 - **Lock-on.** One workout is followed at a time. Other members' workouts are not polled while a workout is locked, so two riders on one membership should start the second ride after the first has ended, or use one Workout trigger for anyone.
 - **Hold.** A Workout sensor stays on for the keep-on time after the class ends, and a new matching workout during that time keeps it on without a gap. A Heart-rate zone sensor changes only after the zone has held for the hold time, and turns off when the workout ends.
 - **Third-party imports are ignored.** Runs and other activities synced into Peloton from Apple Health, Strava, or Fitbit never start or end a workout, even when they land at the top of your workout list mid-ride.
+- **Fast polling after a workout.** After any workout ends the plugin keeps the fast interval for the minutes set under Advanced (5 by default), whatever the switch, then follows the switch again.
 - **Configuration.** The settings page writes the platform block in config.json; the shape and every default are in [SPEC.md](SPEC.md) section 6 and in `config.schema.json`, for anyone who edits by hand.
+
+## Devices
+
+The Device filter on a Workout trigger matches the platform a workout was recorded on. These are the codes the plugin knows, as Peloton reports them:
+
+| Hardware or source | Shown as | device_type | platform | Device filter |
+| --- | --- | --- | --- | --- |
+| Bike (original) | Bike | home_bike_v1 | home_bike | Bike |
+| Bike+ | Bike+ | home_bike_plus | home_bike | Bike |
+| Tread | Tread | prism | home_tread | Tread |
+| Guide | Guide | t21n8m2 | tiger | Guide |
+| Apple TV app | Apple TV | apple_tv | apple_tv | Apple TV |
+| iPhone app | iPhone | iPhone | iOS_app | Phone or tablet app |
+| iPad app | iPad | iPad | iOS_app | Phone or tablet app |
+| Apple Health import | Apple Health import | apple_health | iOS_app | none, imports are ignored |
+
+Every row but the original Bike was observed on a live membership between September 11 and 16, 2026; the original Bike's codes come from public logs. Row and Android: not yet observed; the Devices seen block under Advanced makes a report a copy and paste. An Android app class is expected to match Phone or tablet app once its codes are confirmed.
+
+When the plugin sees a code it does not know it logs one line, "New Peloton device seen", and lists the pair under Advanced, Devices seen, tagged Unknown with a Copy report button. The report holds the two codes, the workout type such as cycling or strength, and the plugin version, nothing else; paste it into a [device report](https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml) and the next release can name the device and, for new hardware, give it a filter.
 
 ## Privacy and what is stored where
 
@@ -122,6 +156,7 @@ If Back does not show the callback address, long-press the Back button and pick 
 - Passwords are stored in config.json only for accounts connected with email and password on the settings page, so the plugin can sign in again by itself. Accounts connected with Sign in with browser store no password.
 - Profile photos are fetched by the plugin and proxied to the settings page; the page never talks to Peloton's servers itself.
 - The log never contains tokens, passwords, emails, or Peloton's responses. Debug logging prints workout ids and statuses only.
+- The devices seen list keeps only device codes (device type and platform) and the workout type each was first seen on, in the owner's account file. No workout ids, titles, dates, or account details are kept for it.
 - To remove everything for an account, click Remove on its card. To remove every stored sign-in, delete the `homebridge-peloton` folder in the Homebridge storage folder.
 
 ## Troubleshooting
@@ -130,7 +165,8 @@ If Back does not show the callback address, long-press the Back button and pick 
 - **Accounts with extra verification.** If Peloton asks for a verification code when the plugin signs in, the panel says so and offers Sign in with browser; complete the verification in the browser tab and paste the callback address. Please open an issue if you hit this, since it has not been seen on a household account yet.
 - **"Peloton sign-in did not complete."** Peloton changed something about its login page and the headless sign-in no longer fits it. Use Sign in with browser to keep going, and open an issue with the output of the auth probe (see [Development](#development)); the fix lives in one file.
 - **No heart-rate data.** The log says "no heart-rate data for this workout" once per workout when no heart-rate monitor is paired. The zone sensor stays off for that workout.
-- **A workout is noticed late.** Without the fast polling automation the plugin polls at the standby interval. Set up the automation, or lower the standby interval under Polling.
+- **A workout is noticed late.** Without the fast polling automation the plugin polls at the standby interval. Set up the automation, or lower the standby interval under Polling. A second workout soon after the first is caught quickly either way, for the minutes set by Keep fast polling after a workout ends under Advanced.
+- **A trigger with a Device filter never turns on.** The workout may come from hardware or an app the plugin does not know yet. Check Devices seen under Advanced: an Unknown row means the codes are new, and Copy report gives you everything a [device report](https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml) needs. A trigger set to Any device works meanwhile.
 
 ## Development
 

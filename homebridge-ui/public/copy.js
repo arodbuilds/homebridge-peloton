@@ -27,8 +27,10 @@ export const FIELD_LABELS = {
   standbyInterval: 'Standby (seconds)',
   debug: 'Debug logging',
   autoOff: 'Fast polling switch turns off after (minutes)',
+  keepFast: 'Keep fast polling after a workout ends (minutes)',
   attention: 'Attention needed sensor',
   checkIn: 'Daily check-in time',
+  devicesSeen: 'Devices seen',
   restore: 'Restore from backup',
 };
 
@@ -163,8 +165,9 @@ export const TRIGGERS = {
   whoChoose: 'Choose a member',
   whoHelp: 'Zones come from this member\'s Peloton profile.',
   device: FIELD_LABELS.device,
-  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread', guide: 'Guide' },
-  deviceHelp: 'Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide.',
+  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread', guide: 'Guide', appletv: 'Apple TV', app: 'Phone or tablet app' },
+  deviceHelp: 'Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. '
+    + 'Apple TV and Phone or tablet app are classes taken in the Peloton app.',
   activities: FIELD_LABELS.activities,
   activityLabels: {
     cycling: 'Cycling', running: 'Running', walking: 'Walking', rowing: 'Rowing', strength: 'Strength', yoga: 'Yoga',
@@ -220,10 +223,27 @@ export const SETTINGS = {
   advanced: 'Advanced',
   autoOff: FIELD_LABELS.autoOff,
   autoOffHelp: 'Counted from the later of the switch turning on and the last workout ending.',
+  keepFast: FIELD_LABELS.keepFast,
+  keepFastHelp: 'After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, '
+    + 'so a second workout is caught quickly.',
   attention: FIELD_LABELS.attention,
   attentionHelp: 'Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification.',
   checkIn: FIELD_LABELS.checkIn,
   checkInHelp: 'Once a day the plugin refreshes each account\'s session and heart-rate zones, even when nobody is working out.',
+  devicesSeen: FIELD_LABELS.devicesSeen,
+  devicesSeenHelp: 'The plugin keeps only the device codes it has seen (device type and platform), nothing about your workouts. '
+    + 'Copying a report shares those two codes, the workout type such as cycling or strength, and the plugin version. '
+    + 'No names, dates, class titles, or account details are included.',
+  devicesSeenLink: 'Report it on GitHub',
+  devicesSeenLinkUrl: 'https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml',
+  devicesSeenEmpty: 'None seen yet. The list fills in as the plugin polls.',
+  /** One row: "{display name} ({device_type}, {platform})". */
+  deviceSeenRow: (name, deviceType, platform) => `${name} (${deviceType}, ${platform})`,
+  deviceKnown: 'Known',
+  deviceUnknown: 'Unknown',
+  copyReport: 'Copy report',
+  reportCopied: 'Report copied. Paste it into the GitHub issue.',
+  copyFailed: 'Could not copy. Select the report below and copy it by hand.',
   restore: FIELD_LABELS.restore,
   restoreHelp: 'Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled.',
   restoreFailed: 'The backup could not be loaded:',
@@ -242,6 +262,7 @@ export const VALIDATION = {
   standbyRange: 'Use 0 to stop polling, or 30 seconds or more.',
   secondsFloor: 'Enter a number of seconds, 0 or more.',
   minutesFloor: 'Enter a number of minutes, 1 or more.',
+  minutesFloorZero: 'Enter a number of minutes, 0 or more.',
   timeFormat: 'Enter a time as HH:MM.',
   labels: { polling: 'Polling', settings: 'Settings' },
 };

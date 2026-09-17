@@ -27,7 +27,7 @@ describe('defaults', () => {
         standbyInterval: 120,
         calloutDismissed: false,
       },
-      advanced: { fastSwitchAutoOffMinutes: 120, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -46,7 +46,7 @@ describe('defaults', () => {
         { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: 'u-owner-0001', zone: 4, holdTime: 20 },
       ],
       polling: { fastSwitch: true, fastSwitchName: 'Peloton fast polling', fastInterval: 10, standbyInterval: 120, calloutDismissed: false },
-      advanced: { fastSwitchAutoOffMinutes: 120, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -109,6 +109,18 @@ describe('clamping and defaulting', () => {
     ]);
   });
 
+  it('accepts keepFastAfterEndMinutes 0, clamps a negative to 0, and defaults a non-number to 5', () => {
+    assert.equal(parse({ advanced: { keepFastAfterEndMinutes: 0 } }).config.advanced.keepFastAfterEndMinutes, 0);
+    assert.deepEqual(parse({ advanced: { keepFastAfterEndMinutes: 0 } }).warnings, []);
+    assert.equal(parse({ advanced: { keepFastAfterEndMinutes: 15 } }).config.advanced.keepFastAfterEndMinutes, 15);
+    const negative = parse({ advanced: { keepFastAfterEndMinutes: -3 } });
+    assert.equal(negative.config.advanced.keepFastAfterEndMinutes, 0);
+    assert.deepEqual(negative.warnings, ['advanced.keepFastAfterEndMinutes is below 0, using 0']);
+    const text = parse({ advanced: { keepFastAfterEndMinutes: 'soon' } });
+    assert.equal(text.config.advanced.keepFastAfterEndMinutes, 5);
+    assert.deepEqual(text.warnings, ['advanced.keepFastAfterEndMinutes is not a number, using 5']);
+  });
+
   it('defaults booleans, the check-in time, and unknown trigger type or accessory kind', () => {
     const { config, warnings } = parse({
       polling: { fastSwitch: 'yes' },
@@ -147,7 +159,7 @@ describe('clamping and defaulting', () => {
     ]);
   });
 
-  it('accepts device any, bike, tread, and guide and defaults anything else to any with one warn line', () => {
+  it('accepts device any, bike, tread, guide, appletv, and app and defaults anything else to any with one warn line', () => {
     const { config, warnings } = parse({
       triggers: [
         { id: 't1', type: 'workout', device: 'bike' },
@@ -155,10 +167,16 @@ describe('clamping and defaulting', () => {
         { id: 't3', type: 'workout' },
         { id: 't4', type: 'workout', device: 'dev-bike-0001' },
         { id: 't5', type: 'workout', device: 'guide' },
+        { id: 't6', type: 'workout', device: 'appletv' },
+        { id: 't7', type: 'workout', device: 'app' },
+        { id: 't8', type: 'workout', device: 'row' },
       ],
     });
-    assert.deepEqual(config.triggers.map((trigger) => trigger.device), ['bike', 'tread', 'any', 'any', 'guide']);
-    assert.deepEqual(warnings, ['triggers[3].device is not "any", "bike", "tread", or "guide", using "any"']);
+    assert.deepEqual(config.triggers.map((trigger) => trigger.device), ['bike', 'tread', 'any', 'any', 'guide', 'appletv', 'app', 'any']);
+    assert.deepEqual(warnings, [
+      'triggers[3].device is not "any", "bike", "tread", "guide", "appletv", or "app", using "any"',
+      'triggers[7].device is not "any", "bike", "tread", "guide", "appletv", or "app", using "any"',
+    ]);
   });
 
   it('warns when a heart-rate zone trigger has no account', () => {

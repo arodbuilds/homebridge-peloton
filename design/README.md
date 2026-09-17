@@ -37,7 +37,7 @@ At v1.3.2 the shell is TypeScript under `homebridge-ui/src/` in that repository,
 8. Fast polling switch Name: always shown (export).
 9. Avatar fallback: the repo's initials on a disc stand. The export's letter placeholder is Peloton's own placeholder image, which the decisions above rule out, and the disc follows the host theme without image assets.
 10. Banner: the export's `peloton-banner-beta2.png` is the same artwork and tagline as `assets/peloton-banner.png` (only file metadata differs), so the repo's copy stands.
-11. Version: 0.1.0-beta.2 in PR 2, read from package.json.
+11. Version: 1.0.0 (0.1.0-beta.2 in PR 2), read from package.json.
 12. Settings placement: everything under Advanced in the fixed order (export).
 13. Empty trigger Name: "Name is required." from the label table (shell W4).
 14. Trigger footer result line: the repo's per-account result line after a failed Test stands (the export omits a state the page needs).
@@ -135,7 +135,7 @@ Warning state (Heart-rate zone whose member is not connected): warning badge "No
 - Name (required, prefilled "Workout" on a new card, no placeholder). Caption "Shown in the Home app. Letters, numbers, spaces and apostrophes."
 - Show in HomeKit as (radio): Occupancy sensor (default) / Switch. Caption "Occupancy sensor is on while the workout is in progress. Switch behaves the same but appears as a toggle."
 - Who (select, 6 cols): Anyone on this membership (default) / each connected member by name.
-- Device (select, 6 cols): Any device (default) / Bike / Tread / Guide. Caption "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide." Clarification (SPEC 6 and 8.3): the choice is the hardware family, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
+- Device (select, 6 cols): Any device (default) / Bike / Tread / Guide / Apple TV / Phone or tablet app. Caption "Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. Apple TV and Phone or tablet app are classes taken in the Peloton app." Clarification (SPEC 6 and 8.3): the choice is the hardware family or the app, matched by the platform the workout was recorded on, not one of the membership's named devices; a membership's device names appear only on the Devices line under Accounts.
 - Activities (multi-select chips, default all, "Select all / none" links, summary "All activities" or "n of 12 selected"): Cycling, Running, Walking, Rowing, Strength, Yoga, Stretching, Meditation, Cardio, Bike bootcamp, Tread bootcamp, Row bootcamp. Chip: 31 px tall, 16 px radius; selected = `--ns-link` fill white text, unselected = 1 px `--ns-border` outline.
 - Keep on after the workout ends (seconds) (number, 6 cols, default 90). Caption "Holds the sensor on briefly so stacked classes do not turn your scene off between them."
 
@@ -166,8 +166,10 @@ Intro: "Options that apply to the whole plugin." Nothing renders on the page gri
 - Name (required, 6 cols, default "Peloton"). Caption "Shown in Homebridge logs and as the bridge name in the Home app."
 - Debug logging (checkbox, 6 cols, off). Caption "Log every poll and the workout data it returns. Sign-in details and session tokens are never logged."
 - Fast polling switch turns off after (minutes) (number, 6 cols, default 120). Caption "Counted from the later of the switch turning on and the last workout ending."
+- Keep fast polling after a workout ends (minutes) (number, 6 cols, default 5, minimum 0). Caption "After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, so a second workout is caught quickly."
 - Attention needed sensor (checkbox, 6 cols, off): "Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification."
 - Daily check-in time (time input, 6 cols, default 03:00). Caption "Once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out."
+- Devices seen (read-only block, 12 cols, label "Devices seen"): one row per device_type and platform pair the plugin has seen, from /devices-seen, reading "{display name} ({device_type}, {platform})" with an outlined "Known" badge or a warning "Unknown" badge after it; an Unknown row carries an outlined 31 px "Copy report" button. Below the rows the caption "The plugin keeps only the device codes it has seen (device type and platform), nothing about your workouts. Copying a report shares those two codes, the workout type such as cycling or strength, and the plugin version. No names, dates, class titles, or account details are included." with the link "Report it on GitHub" at its end, to the repository's new issue page with the device-report template preselected. With nothing seen the rows give way to "None seen yet. The list fills in as the plugin polls." Copy report toasts "Report copied. Paste it into the GitHub issue."; when the clipboard is out of reach the report text appears under the row in the shell's status box (warning tone) with "Could not copy. Select the report below and copy it by hand." The block has no control and never validates.
 - Restore from backup (file field, 12 cols). Caption "Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled." Failures render in the shell's status box under the field (C6). No Download backup and no Reset in beta.2.
 
 ## Validation
@@ -236,6 +238,13 @@ The second PR of beta.2 (SPEC.md section 16) settled these; `peloton-handoff-not
 - Device: Any device / Bike / Tread / Guide with the caption above; Guide is matched by the workout platform `tiger` (SPEC 4.2 and 8.3).
 - Version: the footer reads 0.1.0-beta.2 from package.json through /status.
 - Screenshots: the README walks through four of the five (accounts, trigger-workout, polling, settings); `trigger-zone.png` stays in `assets/screenshots/` for when the offering returns.
+
+## Clarifications from 1.0.0
+The first general release (SPEC.md section 16, 1.0.0 clarifications) settled these.
+- Device: Any device / Bike / Tread / Guide / Apple TV / Phone or tablet app with the caption "Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. Apple TV and Phone or tablet app are classes taken in the Peloton app." Apple TV is matched by the workout platform `apple_tv`, Phone or tablet app by `iOS_app` or `android_app` on a Peloton-originated workout (SPEC 4.2 and 8.3). The collapsed card summary shows the chosen label.
+- Keep fast polling after a workout ends (minutes): a new number field under Advanced directly after Fast polling switch turns off after (minutes), default 5, floor 0, with the caption above; an empty or negative value reads "Enter a number of minutes, 0 or more." and, like every field under Advanced, a value other than the default opens the disclosure.
+- Devices seen: the read-only block described under Settings, placed after Daily check-in time and before Restore from backup. Its rows come from the plugin's UI server (/devices-seen), read with the page and again after every account refresh; the page holds no device table of its own, the server sends each row's display name and known flag. The copy uses the async clipboard API where the page has it and a hidden textarea with the copy command elsewhere, since the Homebridge UI is usually served over plain http.
+- Version: the footer reads 1.0.0 from package.json through /status.
 
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.

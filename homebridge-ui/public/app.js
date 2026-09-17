@@ -229,12 +229,14 @@ export class Page {
   async refreshStatus() {
     const result = await callServer('/status');
     if (result.ok) {
-      this.status = { accounts: result.accounts, devices: result.devices, version: result.version };
+      this.status = { accounts: result.accounts, devices: result.devices, version: result.version, devicesSeen: await devicesSeenList() };
     }
     this.rerender('accounts', false);
     // Who dropdowns and the Not connected warning follow the account states.
     this.rerender('triggers', false);
     this.rerender('polling', false);
+    // The Devices seen block under Advanced follows the store too.
+    this.rerender('settings', false);
     this.revalidate();
   }
 
@@ -677,6 +679,12 @@ export function pendingDraft(config, saved = true) {
   return draft;
 }
 
+/** The device_type and platform pairs the poller has seen, from /devices-seen; empty when the server did not answer. */
+async function devicesSeenList() {
+  const result = await callServer('/devices-seen');
+  return result.ok && Array.isArray(result.devices) ? result.devices : [];
+}
+
 async function start() {
   const root = document.getElementById('app');
   if (!root) {
@@ -693,8 +701,8 @@ async function start() {
     const config = readConfig(index >= 0 ? blocks[index] : undefined);
     const statusResult = await callServer('/status');
     const status = statusResult.ok
-      ? { accounts: statusResult.accounts, devices: statusResult.devices, version: statusResult.version }
-      : { accounts: [], devices: [], version: '' };
+      ? { accounts: statusResult.accounts, devices: statusResult.devices, version: statusResult.version, devicesSeen: await devicesSeenList() }
+      : { accounts: [], devices: [], version: '', devicesSeen: [] };
     if (!statusResult.ok) {
       toastError(PAGE.serverUnavailable);
     }

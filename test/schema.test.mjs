@@ -18,7 +18,7 @@ const SAMPLE = {
     { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: '8084e81d', zone: 4, holdTime: 20 },
   ],
   polling: { fastSwitch: true, fastSwitchName: 'Peloton fast polling', fastInterval: 10, standbyInterval: 120, calloutDismissed: false },
-  advanced: { fastSwitchAutoOffMinutes: 120, attentionSensor: false, dailyCheckIn: '03:00' },
+  advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
   debug: false,
 };
 
@@ -59,6 +59,9 @@ describe('config.schema.json', () => {
     assert.equal(p.polling.properties.fastInterval.minimum, 5);
     assert.equal(p.polling.properties.standbyInterval.default, 120);
     assert.equal(p.advanced.properties.fastSwitchAutoOffMinutes.default, 120);
+    assert.equal(p.advanced.properties.keepFastAfterEndMinutes.default, 5);
+    assert.equal(p.advanced.properties.keepFastAfterEndMinutes.minimum, 0);
+    assert.equal(p.advanced.properties.keepFastAfterEndMinutes.title, 'Keep fast polling after a workout ends (minutes)');
     assert.equal(p.advanced.properties.attentionSensor.default, false);
     assert.equal(p.advanced.properties.dailyCheckIn.default, '03:00');
     assert.equal(p.triggers.items.properties.holdAfterEnd.default, 90);
@@ -66,6 +69,13 @@ describe('config.schema.json', () => {
     assert.equal(p.triggers.items.properties.zone.default, 4);
     assert.equal(p.triggers.items.properties.accessory.default, 'occupancy');
     assert.equal(p.triggers.items.properties.device.default, 'any');
+    assert.deepEqual(p.triggers.items.properties.device.oneOf.map((option) => [option.title, option.enum[0]]), [
+      ['Any device', 'any'], ['Bike', 'bike'], ['Tread', 'tread'], ['Guide', 'guide'],
+      ['Apple TV', 'appletv'], ['Phone or tablet app', 'app'],
+    ]);
+    assert.equal(p.triggers.items.properties.device.description,
+      'Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. '
+      + 'Apple TV and Phone or tablet app are classes taken in the Peloton app.');
   });
 
   it('enforces the fast floor of 5', () => {
@@ -108,7 +118,10 @@ describe('config.schema.json', () => {
     assert.equal(validate(withTrigger(0, { device: 'bike' })), true);
     assert.equal(validate(withTrigger(0, { device: 'tread' })), true);
     assert.equal(validate(withTrigger(0, { device: 'guide' })), true);
+    assert.equal(validate(withTrigger(0, { device: 'appletv' })), true);
+    assert.equal(validate(withTrigger(0, { device: 'app' })), true);
     assert.equal(validate(withTrigger(0, { device: 'dev-bike-0001' })), false);
+    assert.equal(validate(withTrigger(0, { device: 'row' })), false);
     assert.equal(validate(withTrigger(0, { accessory: 'contact' })), false);
     assert.equal(validate(withTrigger(0, { type: 'motion' })), false);
     assert.equal(validate(withTrigger(0, { activities: ['caving'] })), false);
@@ -117,6 +130,8 @@ describe('config.schema.json', () => {
     assert.equal(validate(withTrigger(0, { holdAfterEnd: -1 })), false);
     assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, dailyCheckIn: '25:00' } }), false);
     assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, fastSwitchAutoOffMinutes: 0 } }), false);
+    assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, keepFastAfterEndMinutes: 0 } }), true);
+    assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, keepFastAfterEndMinutes: -1 } }), false);
     assert.equal(validate({ ...SAMPLE, accounts: [{ id: 'a 1', email: 'x@example.com' }] }), false);
     assert.equal(validate({ ...SAMPLE, accounts: [{ id: 'a1' }] }), false);
   });

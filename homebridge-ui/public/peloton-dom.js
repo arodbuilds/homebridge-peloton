@@ -115,6 +115,33 @@ export function relativeTime(then, now = Date.now()) {
   return `${years} year${years === 1 ? '' : 's'} ago`;
 }
 
+/**
+ * Puts text on the clipboard: the async clipboard API where the page has it (a secure context), else a
+ * hidden textarea and the copy command, since the Homebridge UI is usually served over plain http.
+ * Resolves to true when the text was copied.
+ */
+export async function copyText(text) {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // The clipboard API refused (no permission, or not a secure context after all): try the command below.
+  }
+  try {
+    const area = el('textarea', { readonly: true, 'aria-hidden': 'true', style: 'position:fixed;top:0;left:0;opacity:0' });
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    return copied === true;
+  } catch {
+    return false;
+  }
+}
+
 /** The footer glyph (assets/peloton-footer.svg) inlined at 20px so it follows the host theme through currentColor. */
 export function pelotonMark() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

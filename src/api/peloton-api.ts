@@ -103,8 +103,8 @@ export interface WorkoutRide {
 /**
  * A workout as the list and the single-workout call return it (both carry the same fields).
  * Workouts carry no device id field (confirmed by the build 2 Pi probe, SPEC section 15 item 1):
- * device_type is the hardware model code (home_bike_plus, iOS, and so on), not an identifier of
- * the member's unit, so device matching maps it to attached_devices (SPEC section 8.3).
+ * device_type is the hardware model code (home_bike_plus, iPhone, and so on), not an identifier of
+ * the member's unit; device matching compares platform (SPEC section 8.3).
  */
 export interface Workout {
   id: string;

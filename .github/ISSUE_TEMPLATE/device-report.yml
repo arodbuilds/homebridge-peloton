@@ -1,0 +1,25 @@
+name: Device report
+description: Report a Peloton device the plugin does not recognise yet, pasted from the Devices seen block on the settings page.
+title: "[Device] "
+labels: [device]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The plugin keeps only the device codes it has seen (device type and platform), nothing about your workouts. Copying a report shares those two codes, the workout type such as cycling or strength, and the plugin version. No names, dates, class titles, or account details are included.
+
+        To make a report, open the plugin settings page in the Homebridge UI, open Advanced under Settings, find the Unknown row under Devices seen, and click Copy report. Paste it below.
+  - type: textarea
+    id: report
+    attributes:
+      label: Device report
+      description: The text Copy report put on your clipboard.
+      placeholder: |
+        Unknown Peloton device
+        device_type: ...
+        platform: ...
+        discipline: ...
+        plugin: homebridge-peloton ...
+      render: text
+    validations:
+      required: true

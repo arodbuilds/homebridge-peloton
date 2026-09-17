@@ -11,10 +11,13 @@ import { randomUUID } from 'node:crypto';
 
 export type AccessoryKind = 'occupancy' | 'switch';
 
-/** A workout trigger's device filter: any hardware, the Bike or Bike+, the Tread or Tread+, or the Guide (SPEC section 8.3). */
-export type DeviceFilter = 'any' | 'bike' | 'tread' | 'guide';
+/**
+ * A workout trigger's device filter (SPEC section 8.3): any device, the Bike or Bike+, the Tread or
+ * Tread+, the Guide, the Apple TV app, or the phone and tablet app (iPhone, iPad, Android).
+ */
+export type DeviceFilter = 'any' | 'bike' | 'tread' | 'guide' | 'appletv' | 'app';
 
-export const DEVICE_FILTERS: readonly DeviceFilter[] = ['any', 'bike', 'tread', 'guide'];
+export const DEVICE_FILTERS: readonly DeviceFilter[] = ['any', 'bike', 'tread', 'guide', 'appletv', 'app'];
 
 export interface AccountConfig {
   id: string;
@@ -33,7 +36,7 @@ export interface WorkoutTriggerConfig {
   who: string;
   /** Empty means all activities. */
   activities: string[];
-  /** "any", "bike", "tread", or "guide"; matched against the workout's platform. */
+  /** "any", "bike", "tread", "guide", "appletv", or "app"; matched against the workout's platform. */
   device: DeviceFilter;
   /** Seconds the sensor stays on after the workout ends. */
   holdAfterEnd: number;
@@ -66,6 +69,8 @@ export interface PollingConfig {
 
 export interface AdvancedConfig {
   fastSwitchAutoOffMinutes: number;
+  /** Minutes the fast interval is kept after any workout ends, whatever the switch; 0 means none. */
+  keepFastAfterEndMinutes: number;
   attentionSensor: boolean;
   /** Local time "HH:MM". */
   dailyCheckIn: string;
@@ -91,6 +96,7 @@ export const CONFIG_DEFAULTS = {
   fastSwitch: true,
   fastSwitchName: 'Peloton fast polling',
   fastSwitchAutoOffMinutes: 120,
+  keepFastAfterEndMinutes: 5,
   attentionSensor: false,
   dailyCheckIn: '03:00',
   workoutTriggerName: 'Workout',
@@ -147,6 +153,9 @@ export function parseConfig(raw: unknown, options: ParseConfigOptions = {}): Pel
     advanced: {
       fastSwitchAutoOffMinutes: integer(advanced.fastSwitchAutoOffMinutes, {
         name: 'advanced.fastSwitchAutoOffMinutes', fallback: CONFIG_DEFAULTS.fastSwitchAutoOffMinutes, min: 1,
+      }, warn),
+      keepFastAfterEndMinutes: integer(advanced.keepFastAfterEndMinutes, {
+        name: 'advanced.keepFastAfterEndMinutes', fallback: CONFIG_DEFAULTS.keepFastAfterEndMinutes, min: 0,
       }, warn),
       attentionSensor: bool(advanced.attentionSensor, CONFIG_DEFAULTS.attentionSensor, 'advanced.attentionSensor', warn),
       dailyCheckIn: dailyCheckIn(advanced.dailyCheckIn, warn),
@@ -235,7 +244,7 @@ function deviceFilter(value: unknown, label: string, warn: WarnFn): DeviceFilter
   if (typeof value === 'string' && (DEVICE_FILTERS as readonly string[]).includes(value)) {
     return value as DeviceFilter;
   }
-  warn(`${label}.device is not "any", "bike", "tread", or "guide", using "any"`);
+  warn(`${label}.device is not "any", "bike", "tread", "guide", "appletv", or "app", using "any"`);
   return 'any';
 }
 
