@@ -407,10 +407,17 @@ describe('settings section', () => {
     assert.equal(advanced.querySelector('summary').textContent, 'Advanced');
     assert.equal(advanced.open, false, 'collapsed while every setting is at its default');
     assert.deepEqual([...advanced.querySelectorAll('[data-path]')].map((node) => node.dataset.path),
-      ['name', 'debug', 'advanced.fastSwitchAutoOffMinutes', 'advanced.attentionSensor', 'advanced.dailyCheckIn', 'restore']);
+      ['name', 'debug', 'advanced.fastSwitchAutoOffMinutes', 'advanced.keepFastAfterEndMinutes', 'advanced.attentionSensor', 'advanced.dailyCheckIn',
+        'restore']);
     assert.deepEqual([...advanced.querySelectorAll('.form-label')].map((node) => node.textContent), [
-      'Name*', 'Fast polling switch turns off after (minutes)', 'Daily check-in time', 'Devices seen', 'Restore from backup',
+      'Name*', 'Fast polling switch turns off after (minutes)', 'Keep fast polling after a workout ends (minutes)', 'Daily check-in time',
+      'Devices seen', 'Restore from backup',
     ]);
+    const keepFast = advanced.querySelector('[data-path="advanced.keepFastAfterEndMinutes"]');
+    assert.equal(keepFast.querySelector('input').value, '5');
+    assert.equal(keepFast.querySelector('input').getAttribute('min'), '0');
+    assert.equal(keepFast.querySelector('.form-text').textContent,
+      'After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, so a second workout is caught quickly.');
     const cells = [...advanced.querySelectorAll('.ns-grid > *')];
     const cellOf = (selector) => cells.indexOf(advanced.querySelector(selector).parentElement);
     assert.ok(cellOf('.ns-devices-seen') > cellOf('[data-path="advanced.dailyCheckIn"]'), 'Devices seen follows the check-in time');
@@ -425,6 +432,8 @@ describe('settings section', () => {
     assert.equal(named.root.querySelector('#section-settings details').open, true);
     const debug = mount({ debug: true });
     assert.equal(debug.root.querySelector('#section-settings details').open, true);
+    const keepFast = mount({ advanced: { keepFastAfterEndMinutes: 0 } });
+    assert.equal(keepFast.root.querySelector('#section-settings details').open, true, 'a changed keep-fast time opens Advanced too');
 
     const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
     const details = root.querySelector('#section-settings details');

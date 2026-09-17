@@ -745,6 +745,119 @@ describe('fast polling switch auto-off', () => {
   });
 });
 
+describe('keep fast polling after a workout ends', () => {
+  const MINUTE = 60_000;
+
+  /** Locks on the cycling ride with the switch off, then ends it. Returns the harness with the end time. */
+  async function ended(config = {}, switchOn = false) {
+    const h = await harness({ accounts: [OWNER], config });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
+    h.poller.start();
+    if (switchOn) {
+      h.poller.setSwitch(true);
+    }
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    assert.equal(h.poller.keepFastUntil, undefined);
+    h.fetch.route(WORKOUT_CYC, apiResponse('workout-single-complete-cycling')).route(LIST_OWNER, apiResponse('workout-complete-cycling'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 1);
+    h.endedAt = h.clock.now();
+    return h;
+  }
+
+  it('keeps the fast interval for keepFastAfterEndMinutes after the end with the switch off, then goes back to standby polling', async () => {
+    const h = await ended();
+    assert.equal(h.poller.switchOn, false);
+    assert.equal(h.poller.keepFastUntil, h.endedAt + 5 * MINUTE);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby', 'the hold ran out and the switch is off');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    const fastPolls = h.fetch.count(LIST_OWNER) - afterHold;
+    assert.ok(fastPolls >= 5 && fastPolls <= 7, `polls at the fast interval while the window is open: ${fastPolls}`);
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    assert.equal(h.poller.keepFastUntil, undefined);
+    const atClose = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(119_000);
+    assert.equal(h.fetch.count(LIST_OWNER), atClose, 'the standby interval applies once the window closes');
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), atClose + 1);
+    assert.equal(h.poller.state, 'standby');
+    assert.deepEqual(h.named('stateChanged').map((event) => event.state), ['locked', 'released', 'standby']);
+  });
+
+  it('catches a second workout within one fast interval during the window, and the window restarts from its end', async () => {
+    const h = await ended();
+    await h.clock.advance(2 * MINUTE);
+    assert.equal(h.poller.state, 'standby');
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0009', 'IN_PROGRESS')).route(/\/api\/workout\/w-cyc-0009$/, workoutBody('w-cyc-0009', 'IN_PROGRESS'));
+    await h.clock.advance(10_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.deepEqual(h.named('workoutStarted').map((event) => event.workout.id), ['w-cyc-0001', 'w-cyc-0009']);
+    await h.clock.advance(4 * MINUTE);
+    assert.equal(h.poller.state, 'locked', 'the first window closing does not touch a locked workout');
+    h.fetch.route(/\/api\/workout\/w-cyc-0009$/, workoutBody('w-cyc-0009', 'COMPLETE')).route(LIST_OWNER, listBody('w-cyc-0009', 'COMPLETE'));
+    await h.clock.advance(10_000);
+    assert.equal(h.named('workoutEnded').length, 2);
+    assert.equal(h.poller.keepFastUntil, h.clock.now() + 5 * MINUTE);
+  });
+
+  it('polls at the standby interval at once with keepFastAfterEndMinutes 0', async () => {
+    const h = await ended({ advanced: { keepFastAfterEndMinutes: 0 } });
+    assert.equal(h.poller.keepFastUntil, undefined);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(119_000);
+    assert.equal(h.fetch.count(LIST_OWNER), afterHold);
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), afterHold + 1);
+  });
+
+  it('changes nothing while the switch is on, and a switch turned off during the window keeps the fast interval until it closes', async () => {
+    const h = await ended({}, true);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'scanning');
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    assert.equal(h.poller.keepFastUntil, undefined);
+    const atClose = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    assert.ok(h.fetch.count(LIST_OWNER) - atClose >= 5, 'still scanning at the fast interval');
+
+    const off = await ended({ advanced: { keepFastAfterEndMinutes: 10 } }, true);
+    await off.clock.advance(90_000);
+    off.poller.setSwitch(false);
+    assert.equal(off.poller.state, 'standby');
+    await off.clock.advance(0);
+    const afterOff = off.fetch.count(LIST_OWNER);
+    await off.clock.advance(MINUTE);
+    assert.ok(off.fetch.count(LIST_OWNER) - afterOff >= 5, 'the fast interval survives the switch turning off while the window is open');
+    await off.clock.advance(off.endedAt + 10 * MINUTE - off.clock.now());
+    const closed = off.fetch.count(LIST_OWNER);
+    await off.clock.advance(119_000);
+    assert.equal(off.fetch.count(LIST_OWNER), closed);
+  });
+
+  it('never polls after the window closes when standby is 0, and stop cancels the window timer', async () => {
+    // With standby 0 the ride is found with the switch on; the switch goes off as soon as the ride ends.
+    const h = await ended({ polling: { standbyInterval: 0 } }, true);
+    h.poller.setSwitch(false);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.state, 'standby');
+    const afterHold = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(MINUTE);
+    assert.ok(h.fetch.count(LIST_OWNER) > afterHold, 'fast polling runs during the window even with standby 0');
+    await h.clock.advance(h.endedAt + 5 * MINUTE - h.clock.now());
+    const closed = h.fetch.count(LIST_OWNER);
+    await h.clock.advance(HOUR);
+    assert.equal(h.fetch.count(LIST_OWNER), closed);
+    const again = await ended();
+    again.poller.stop();
+    assert.deepEqual(again.clock.pending(), []);
+  });
+});
+
 describe('daily check-in', () => {
   function expectedCheckIn(now, time = '03:00') {
     const [hours, minutes] = time.split(':').map(Number);

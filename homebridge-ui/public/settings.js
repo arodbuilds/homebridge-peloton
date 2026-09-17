@@ -1,7 +1,8 @@
 /**
  * The Settings section (design/README.md, Settings): the intro, then the collapsed Advanced disclosure holding
- * every field in this order: Name, Debug logging, the auto-off minutes, the Attention needed sensor, the daily
- * check-in time, the read-only Devices seen block, and Restore from backup. Nothing renders on the page grid
+ * every field in this order: Name, Debug logging, the auto-off minutes, the minutes the fast interval is kept
+ * after a workout ends, the Attention needed sensor, the daily check-in time, the read-only Devices seen block,
+ * and Restore from backup. Nothing renders on the page grid
  * outside the disclosure.
  */
 
@@ -17,6 +18,7 @@ export function advancedTouched(config) {
   return config.name !== DEFAULTS.name
     || config.debug !== DEFAULTS.debug
     || a.fastSwitchAutoOffMinutes !== DEFAULTS.fastSwitchAutoOffMinutes
+    || a.keepFastAfterEndMinutes !== DEFAULTS.keepFastAfterEndMinutes
     || a.attentionSensor !== DEFAULTS.attentionSensor
     || a.dailyCheckIn !== DEFAULTS.dailyCheckIn;
 }
@@ -143,6 +145,10 @@ export function renderSettings(app, container) {
       c.advanced.fastSwitchAutoOffMinutes = value;
       app.changed();
     }, { path: 'advanced.fastSwitchAutoOffMinutes', min: 1, help: SETTINGS.autoOffHelp })),
+    gridCell(6, numberField(SETTINGS.keepFast, c.advanced.keepFastAfterEndMinutes, (value) => {
+      c.advanced.keepFastAfterEndMinutes = value;
+      app.changed();
+    }, { path: 'advanced.keepFastAfterEndMinutes', min: 0, help: SETTINGS.keepFastHelp })),
     gridCell(6, checkboxField(SETTINGS.attention, c.advanced.attentionSensor, (value) => {
       c.advanced.attentionSensor = value;
       app.changed();

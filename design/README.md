@@ -166,6 +166,7 @@ Intro: "Options that apply to the whole plugin." Nothing renders on the page gri
 - Name (required, 6 cols, default "Peloton"). Caption "Shown in Homebridge logs and as the bridge name in the Home app."
 - Debug logging (checkbox, 6 cols, off). Caption "Log every poll and the workout data it returns. Sign-in details and session tokens are never logged."
 - Fast polling switch turns off after (minutes) (number, 6 cols, default 120). Caption "Counted from the later of the switch turning on and the last workout ending."
+- Keep fast polling after a workout ends (minutes) (number, 6 cols, default 5, minimum 0). Caption "After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, so a second workout is caught quickly."
 - Attention needed sensor (checkbox, 6 cols, off): "Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification."
 - Daily check-in time (time input, 6 cols, default 03:00). Caption "Once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out."
 - Restore from backup (file field, 12 cols). Caption "Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled." Failures render in the shell's status box under the field (C6). No Download backup and no Reset in beta.2.

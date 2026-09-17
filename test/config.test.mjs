@@ -27,7 +27,7 @@ describe('defaults', () => {
         standbyInterval: 120,
         calloutDismissed: false,
       },
-      advanced: { fastSwitchAutoOffMinutes: 120, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -46,7 +46,7 @@ describe('defaults', () => {
         { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: 'u-owner-0001', zone: 4, holdTime: 20 },
       ],
       polling: { fastSwitch: true, fastSwitchName: 'Peloton fast polling', fastInterval: 10, standbyInterval: 120, calloutDismissed: false },
-      advanced: { fastSwitchAutoOffMinutes: 120, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -107,6 +107,18 @@ describe('clamping and defaulting', () => {
       'polling.fastInterval is not a number, using 10',
       'advanced.fastSwitchAutoOffMinutes is not a number, using 120',
     ]);
+  });
+
+  it('accepts keepFastAfterEndMinutes 0, clamps a negative to 0, and defaults a non-number to 5', () => {
+    assert.equal(parse({ advanced: { keepFastAfterEndMinutes: 0 } }).config.advanced.keepFastAfterEndMinutes, 0);
+    assert.deepEqual(parse({ advanced: { keepFastAfterEndMinutes: 0 } }).warnings, []);
+    assert.equal(parse({ advanced: { keepFastAfterEndMinutes: 15 } }).config.advanced.keepFastAfterEndMinutes, 15);
+    const negative = parse({ advanced: { keepFastAfterEndMinutes: -3 } });
+    assert.equal(negative.config.advanced.keepFastAfterEndMinutes, 0);
+    assert.deepEqual(negative.warnings, ['advanced.keepFastAfterEndMinutes is below 0, using 0']);
+    const text = parse({ advanced: { keepFastAfterEndMinutes: 'soon' } });
+    assert.equal(text.config.advanced.keepFastAfterEndMinutes, 5);
+    assert.deepEqual(text.warnings, ['advanced.keepFastAfterEndMinutes is not a number, using 5']);
   });
 
   it('defaults booleans, the check-in time, and unknown trigger type or accessory kind', () => {

@@ -239,6 +239,9 @@ export class Poller {
   private lastWorkoutEndAt: number | undefined;
   private autoOffTimer: unknown;
   private checkInTimer: unknown;
+  /** The end of the fast interval kept after the last workout end (SPEC section 8.4), and its timer. */
+  private fastUntil: number | undefined;
+  private keepFastTimer: unknown;
   /** Every device_type and platform pair already recorded (SPEC section 8.2), loaded from the store on first use. */
   private seenDevices: Set<string> | undefined;
   private seenDevicesLoading: Promise<Set<string>> | undefined;
@@ -321,6 +324,8 @@ export class Poller {
     this.started = false;
     this.generation += 1;
     this.clearAutoOff();
+    this.clearKeepFast();
+    this.fastUntil = undefined;
     if (this.checkInTimer !== undefined) {
       this.scheduler.clearTimer(this.checkInTimer);
       this.checkInTimer = undefined;
@@ -359,6 +364,11 @@ export class Poller {
     const run = this.runCheckIn();
     this.track(run);
     return run;
+  }
+
+  /** When the fast interval kept after the last workout end runs out, or undefined while none is running. */
+  get keepFastUntil(): number | undefined {
+    return this.fastUntil !== undefined && this.fastUntil > this.now() ? this.fastUntil : undefined;
   }
 
   /** When the auto-off timer will fire, or undefined while the switch is off. */
@@ -421,6 +431,39 @@ export class Poller {
     this.emit('switchAutoOff', { minutes });
     this.emit('switchChanged', { on: false, reason: 'auto' });
     this.applySwitchChange();
+  }
+
+  /* ----------------------------------------------------------------------------------------------
+   * Fast interval kept after a workout ends (SPEC section 8.4)
+   * -------------------------------------------------------------------------------------------- */
+
+  /**
+   * Keeps the fast interval for keepFastAfterEndMinutes after a workout ends, whatever the switch,
+   * so a second workout is caught within one fast interval. When the window closes with the switch
+   * off, the household goes back on the standby schedule; with it on, nothing changes.
+   */
+  private armKeepFast(): void {
+    this.clearKeepFast();
+    const ms = this.config.advanced.keepFastAfterEndMinutes * 60_000;
+    if (ms <= 0) {
+      this.fastUntil = undefined;
+      return;
+    }
+    this.fastUntil = this.now() + ms;
+    this.keepFastTimer = this.scheduler.setTimer(() => {
+      this.keepFastTimer = undefined;
+      this.fastUntil = undefined;
+      if (this.started && !this.switchIsOn && (this.currentState === 'standby' || this.currentState === 'scanning')) {
+        this.scheduleAll(false);
+      }
+    }, ms);
+  }
+
+  private clearKeepFast(): void {
+    if (this.keepFastTimer !== undefined) {
+      this.scheduler.clearTimer(this.keepFastTimer);
+      this.keepFastTimer = undefined;
+    }
   }
 
   /* ----------------------------------------------------------------------------------------------
@@ -499,9 +542,9 @@ export class Poller {
     this.emit('stateChanged', { state });
   }
 
-  /** The interval for standby or scanning in seconds, 0 for no polling. */
+  /** The interval for standby or scanning in seconds, 0 for no polling: fast while the switch is on or a workout ended recently (8.4). */
   private listInterval(): number {
-    return this.switchIsOn ? this.config.polling.fastInterval : this.config.polling.standbyInterval;
+    return this.switchIsOn || this.keepFastUntil !== undefined ? this.config.polling.fastInterval : this.config.polling.standbyInterval;
   }
 
   private applySwitchChange(): void {
@@ -854,6 +897,7 @@ export class Poller {
     if (this.switchIsOn) {
       this.armAutoOff();
     }
+    this.armKeepFast();
     this.log.info(`${account.displayName}: workout ended`);
     this.emit('workoutEnded', { accountId: account.id, userId: account.userId, displayName: account.displayName, workoutId });
     for (const trigger of this.triggers) {

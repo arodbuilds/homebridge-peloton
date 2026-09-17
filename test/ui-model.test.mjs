@@ -166,6 +166,10 @@ describe('validation', () => {
     ]);
     assert.deepEqual(issuesFor({ name: ' ' }), ['Settings: Name is required.']);
     assert.deepEqual(issuesFor({ advanced: { fastSwitchAutoOffMinutes: 0 } }), ['Settings: Enter a number of minutes, 1 or more.']);
+    assert.deepEqual(issuesFor({ advanced: { keepFastAfterEndMinutes: -1 } }), ['Settings: Enter a number of minutes, 0 or more.']);
+    assert.deepEqual(issuesFor({ advanced: { keepFastAfterEndMinutes: 0 } }), []);
+    assert.equal(exportConfig(readConfig({})).advanced.keepFastAfterEndMinutes, 5);
+    assert.equal(exportConfig(readConfig({ advanced: { keepFastAfterEndMinutes: 15 } })).advanced.keepFastAfterEndMinutes, 15);
     assert.deepEqual(issuesFor({}), []);
   });
 

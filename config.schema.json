@@ -232,7 +232,7 @@
       },
       "advanced": {
         "title": "Advanced",
-        "description": "Rarely needed options: the auto-off period, the Attention needed sensor, and the daily check-in time.",
+        "description": "Rarely needed options: the auto-off period, the fast interval kept after a workout ends, the Attention needed sensor, and the daily check-in time.",
         "type": "object",
         "default": {},
         "properties": {
@@ -242,6 +242,13 @@
             "type": "integer",
             "minimum": 1,
             "default": 120
+          },
+          "keepFastAfterEndMinutes": {
+            "title": "Keep fast polling after a workout ends (minutes)",
+            "description": "After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, so a second workout is caught quickly.",
+            "type": "integer",
+            "minimum": 0,
+            "default": 5
           },
           "attentionSensor": {
             "title": "Attention needed sensor",

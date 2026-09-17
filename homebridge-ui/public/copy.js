@@ -27,6 +27,7 @@ export const FIELD_LABELS = {
   standbyInterval: 'Standby (seconds)',
   debug: 'Debug logging',
   autoOff: 'Fast polling switch turns off after (minutes)',
+  keepFast: 'Keep fast polling after a workout ends (minutes)',
   attention: 'Attention needed sensor',
   checkIn: 'Daily check-in time',
   devicesSeen: 'Devices seen',
@@ -222,6 +223,9 @@ export const SETTINGS = {
   advanced: 'Advanced',
   autoOff: FIELD_LABELS.autoOff,
   autoOffHelp: 'Counted from the later of the switch turning on and the last workout ending.',
+  keepFast: FIELD_LABELS.keepFast,
+  keepFastHelp: 'After any workout ends the plugin keeps the fast interval this long, even if the fast polling switch is off, '
+    + 'so a second workout is caught quickly.',
   attention: FIELD_LABELS.attention,
   attentionHelp: 'Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification.',
   checkIn: FIELD_LABELS.checkIn,
@@ -258,6 +262,7 @@ export const VALIDATION = {
   standbyRange: 'Use 0 to stop polling, or 30 seconds or more.',
   secondsFloor: 'Enter a number of seconds, 0 or more.',
   minutesFloor: 'Enter a number of minutes, 1 or more.',
+  minutesFloorZero: 'Enter a number of minutes, 0 or more.',
   timeFormat: 'Enter a time as HH:MM.',
   labels: { polling: 'Polling', settings: 'Settings' },
 };

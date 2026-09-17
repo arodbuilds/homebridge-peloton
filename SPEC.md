@@ -151,7 +151,7 @@ All auth failures throw AuthError with stage in: authorize, credentials, callbac
   ],
   "polling": { "fastSwitch": true, "fastSwitchName": "Peloton fast polling",
                "fastInterval": 10, "standbyInterval": 120, "calloutDismissed": false },
-  "advanced": { "fastSwitchAutoOffMinutes": 120, "attentionSensor": false, "dailyCheckIn": "03:00" },
+  "advanced": { "fastSwitchAutoOffMinutes": 120, "keepFastAfterEndMinutes": 5, "attentionSensor": false, "dailyCheckIn": "03:00" },
   "debug": false
 }
 ```
@@ -165,7 +165,7 @@ Rules:
 - device is "any", "bike", "tread", "guide", "appletv", or "app". Any other value becomes "any" with a warn line.
 - config.schema.json mirrors this shape with the defaults above, the settings page copy as titles and descriptions, and marks the custom UI (customUi true, customUiPath ./homebridge-ui). It carries the constraints the page enforces: fastInterval minimum 5, standbyInterval 0 or 30 and above, name and triggers[].name required, an hrZone trigger's who a member (never "anyone"), device one of any, bike, tread, guide, appletv, app, and never fastSwitch false together with standbyInterval 0. Trigger names must differ from each other (case-insensitive); the page enforces it and the schema states it, since JSON Schema cannot express it across items.
 - The settings page (design/README.md) is the normal editor. It pushes the block through updatePluginConfig and the host's Save writes config.json; the plugin's UI server never writes config.json.
-- Validation (config.ts): invalid values are clamped or defaulted with one warn line each and never a crash. fastInterval has a floor of 5, standbyInterval a floor of 0, holdAfterEnd and holdTime a floor of 0, zone a range of 1 to 5, fastSwitchAutoOffMinutes a floor of 1, dailyCheckIn must be HH:MM. An unknown trigger type becomes workout and an unknown accessory kind occupancy. A missing, duplicate, or unsafe id is replaced by a generated id for the run with a warn line asking the user to save the config from the settings page so the id persists. An hrZone trigger whose who is "anyone" is kept, warned about, and never turns on.
+- Validation (config.ts): invalid values are clamped or defaulted with one warn line each and never a crash. fastInterval has a floor of 5, standbyInterval a floor of 0, holdAfterEnd and holdTime a floor of 0, zone a range of 1 to 5, fastSwitchAutoOffMinutes a floor of 1, keepFastAfterEndMinutes a floor of 0 (default 5), dailyCheckIn must be HH:MM. An unknown trigger type becomes workout and an unknown accessory kind occupancy. A missing, duplicate, or unsafe id is replaced by a generated id for the run with a warn line asking the user to save the config from the settings page so the id persists. An hrZone trigger whose who is "anyone" is kept, warned about, and never turns on.
 
 ## 7. Account store
 
@@ -198,7 +198,7 @@ One loop per platform. All timing uses an injectable clock so tests can drive it
 
 ### 8.1 States
 
-- standby: Fast polling switch off, no workout locked. Poll every connected account at standbyInterval, staggered evenly across the interval. If standbyInterval is 0, no polling at all.
+- standby: Fast polling switch off, no workout locked. Poll every connected account at standbyInterval, staggered evenly across the interval, except for keepFastAfterEndMinutes after any workout end, when the fast interval applies (8.4). If standbyInterval is 0, no polling at all outside that window.
 - scanning: switch on, no workout locked. Poll every connected account at fastInterval, staggered.
 - locked: one account has a workout IN_PROGRESS. Poll only that account at fastInterval. Add the performance_graph call on each poll only if at least one hrZone trigger targets that account.
 - released: the locked workout has ended and at least one workout trigger is still in its holdAfterEnd. Poll only that account's workouts list at fastInterval, which is where a stacked class shows up; a new IN_PROGRESS id locks on again and keeps the sensor on without a gap.
@@ -232,6 +232,7 @@ Heart-rate zone trigger: from each performance_graph poll take the latest heart_
 - Exposed as a Switch service, writable. Off at startup.
 - Auto-off: a timer of fastSwitchAutoOffMinutes counted from the later of the switch turning on and the last workout ending, so it is re-armed on switch-on and on every workout end while the switch is on. When it fires, the switch turns off, a log line says so, and switchAutoOff is raised; a locked or released workout is still followed to its end. A manual off cancels the timer.
 - When fastSwitch is false in config, the accessory is removed and the poller behaves as if the switch were permanently off.
+- Keep fast polling after a workout ends: on every workout end the poller keeps the fast interval for advanced.keepFastAfterEndMinutes (default 5, 0 for none), whether the switch is on or off, so a second workout is caught within one fast interval. The window is counted from the workout end, so it overlaps holdAfterEnd; once the hold releases, standby or scanning polls at the fast interval until the window closes, then follows the switch state: with the switch off the household goes back on the standby schedule (no polling at all when standbyInterval is 0), with it on nothing changes. A window closing while a workout is locked or released changes nothing, and the next end starts a new window. The window does not move the auto-off timer.
 
 ### 8.5 Daily check-in
 

@@ -69,6 +69,8 @@ export interface PollingConfig {
 
 export interface AdvancedConfig {
   fastSwitchAutoOffMinutes: number;
+  /** Minutes the fast interval is kept after any workout ends, whatever the switch; 0 means none. */
+  keepFastAfterEndMinutes: number;
   attentionSensor: boolean;
   /** Local time "HH:MM". */
   dailyCheckIn: string;
@@ -94,6 +96,7 @@ export const CONFIG_DEFAULTS = {
   fastSwitch: true,
   fastSwitchName: 'Peloton fast polling',
   fastSwitchAutoOffMinutes: 120,
+  keepFastAfterEndMinutes: 5,
   attentionSensor: false,
   dailyCheckIn: '03:00',
   workoutTriggerName: 'Workout',
@@ -150,6 +153,9 @@ export function parseConfig(raw: unknown, options: ParseConfigOptions = {}): Pel
     advanced: {
       fastSwitchAutoOffMinutes: integer(advanced.fastSwitchAutoOffMinutes, {
         name: 'advanced.fastSwitchAutoOffMinutes', fallback: CONFIG_DEFAULTS.fastSwitchAutoOffMinutes, min: 1,
+      }, warn),
+      keepFastAfterEndMinutes: integer(advanced.keepFastAfterEndMinutes, {
+        name: 'advanced.keepFastAfterEndMinutes', fallback: CONFIG_DEFAULTS.keepFastAfterEndMinutes, min: 0,
       }, warn),
       attentionSensor: bool(advanced.attentionSensor, CONFIG_DEFAULTS.attentionSensor, 'advanced.attentionSensor', warn),
       dailyCheckIn: dailyCheckIn(advanced.dailyCheckIn, warn),
