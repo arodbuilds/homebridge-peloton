@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { AuthError } from '../dist/auth/peloton-auth.js';
 import { parseConfig } from '../dist/config.js';
-import { Poller, backoffInterval, nextLocalTime } from '../dist/poller/poller.js';
+import { Poller, backoffInterval, nextLocalTime, workoutLabel } from '../dist/poller/poller.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
 import { apiFixture, apiResponse, jsonResponse } from './helpers/fixtures.mjs';
@@ -158,6 +158,26 @@ describe('standby', () => {
     await h.clock.advance(HOUR);
     assert.equal(h.fetch.requests.length, 0);
     assert.equal(h.poller.state, 'standby');
+  });
+
+  it('logs the ride title when there is one, else the workout title or name, else the discipline alone', async () => {
+    const cycling = apiFixture('workout-in-progress-cycling').data[0];
+    const parsed = (extra) => ({ fitnessDiscipline: 'strength', title: '', name: '', ride: null, ...extra });
+    const ride = { id: 'r', title: cycling.ride.title, duration: 1800 };
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'cycling', title: cycling.title, name: cycling.name, ride })), 'cycling, 30 min Power Zone Ride');
+    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout', ride: { id: 'r', title: 'Bodyweight Strength', duration: 600 } })),
+      'strength, Bodyweight Strength');
+    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout' })), 'strength, Just Work Out');
+    assert.equal(workoutLabel(parsed({ name: 'Strength Workout', ride: { id: 'r', title: '', duration: null } })), 'strength, Strength Workout');
+    assert.equal(workoutLabel(parsed({ title: '  ' })), 'strength');
+
+    // An app class with no ride title and empty title and name no longer logs "(strength, )".
+    const h = await harness({ accounts: [OWNER] });
+    const appClass = { fitness_discipline: 'strength', device_type: 'iPhone', platform: 'iOS_app', title: '', name: '', ride: null };
+    h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', appClass)).route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(h.lines.info, ['Owner: workout started (strength)', 'Workout: on']);
   });
 
   it('counts a workout already in progress at startup as started on the first poll', async () => {

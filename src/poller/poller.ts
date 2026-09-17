@@ -148,6 +148,16 @@ export const GRAPH_EVERY_N = 5;
 /** A sample counts as stale once this many polls pass without a new one. */
 export const STALE_SAMPLE_POLLS = 2;
 
+/**
+ * What the "workout started" line says in brackets (SPEC section 11): the discipline, then the class
+ * title when there is one (ride.title, else the workout's title, else its name), so an app class
+ * without a ride title logs the discipline alone rather than an empty title.
+ */
+export function workoutLabel(workout: Workout): string {
+  const title = (workout.ride?.title || workout.title || workout.name).trim();
+  return title.length > 0 ? `${workout.fitnessDiscipline}, ${title}` : workout.fitnessDiscipline;
+}
+
 /** The key a device_type and platform pair is remembered by. */
 function seenKey(deviceType: string, platform: string): string {
   return `${deviceType}\n${platform}`;
@@ -869,7 +879,7 @@ export class Poller {
     }
     this.generation += 1;
     this.setState('locked');
-    this.log.info(`${account.displayName}: workout started (${workout.fitnessDiscipline}, ${workout.title})`);
+    this.log.info(`${account.displayName}: workout started (${workoutLabel(workout)})`);
     this.emit('workoutStarted', { accountId: account.id, userId: account.userId, displayName: account.displayName, workout });
 
     for (const trigger of this.triggers) {
