@@ -254,8 +254,8 @@ describe('devices line', () => {
 describe('device report', () => {
   it('is exactly the two codes, the discipline, and the plugin version, one per line', () => {
     assert.equal(
-      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false }, '1.0.0'),
-      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.0',
+      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false }, '1.0.1'),
+      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.1',
     );
   });
 });
