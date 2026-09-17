@@ -5,8 +5,8 @@ import { describe, it } from 'node:test';
 
 import { FIELD_LABELS, STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, devicesText, duplicateTrigger, exportConfig, findForbiddenKey,
-  isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry, validate,
+  ACTIVITIES, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, deviceReport, devicesText, duplicateTrigger, exportConfig,
+  findForbiddenKey, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
 import { required } from '../homebridge-ui/public/shell-copy.js';
 
@@ -244,5 +244,14 @@ describe('devices line', () => {
       { id: 'dev-tread-0001', name: 'Tread', group: 'tread' },
       { id: 'dev-guide-0001', name: null, group: 'guide' },
     ]), 'Blue Door+ (bike), Tread (tread), Guide');
+  });
+});
+
+describe('device report', () => {
+  it('is exactly the two codes, the discipline, and the plugin version, one per line', () => {
+    assert.equal(
+      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false }, '1.0.0'),
+      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.0',
+    );
   });
 });

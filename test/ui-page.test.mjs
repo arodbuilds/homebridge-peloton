@@ -81,6 +81,10 @@ const STATUS = {
     { id: 'dev-guide-0001', name: null, group: 'guide' },
   ],
   version: '0.1.0-beta.2',
+  devicesSeen: [
+    { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', name: 'Bike+', known: true },
+    { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false },
+  ],
 };
 
 /** Builds the page for a platform block and the given /status answer, as start() does after getPluginConfig and /status. */
@@ -244,7 +248,7 @@ describe('new trigger names', () => {
     addTrigger(root);
     assert.deepEqual(page.config.triggers.map((trigger) => trigger.type), ['workout', 'workout']);
     assert.equal(root.querySelectorAll('.ns-trigger-card').length, 2);
-    assert.equal(root.querySelectorAll('.ns-badge-warning').length, 0, 'a Workout card carries no Not offered badge');
+    assert.equal(root.querySelectorAll('.ns-trigger-card .ns-badge-warning').length, 0, 'a Workout card carries no Not offered badge');
   });
 });
 
@@ -405,8 +409,12 @@ describe('settings section', () => {
     assert.deepEqual([...advanced.querySelectorAll('[data-path]')].map((node) => node.dataset.path),
       ['name', 'debug', 'advanced.fastSwitchAutoOffMinutes', 'advanced.attentionSensor', 'advanced.dailyCheckIn', 'restore']);
     assert.deepEqual([...advanced.querySelectorAll('.form-label')].map((node) => node.textContent), [
-      'Name*', 'Fast polling switch turns off after (minutes)', 'Daily check-in time', 'Restore from backup',
+      'Name*', 'Fast polling switch turns off after (minutes)', 'Daily check-in time', 'Devices seen', 'Restore from backup',
     ]);
+    const cells = [...advanced.querySelectorAll('.ns-grid > *')];
+    const cellOf = (selector) => cells.indexOf(advanced.querySelector(selector).parentElement);
+    assert.ok(cellOf('.ns-devices-seen') > cellOf('[data-path="advanced.dailyCheckIn"]'), 'Devices seen follows the check-in time');
+    assert.ok(cellOf('.ns-devices-seen') < cellOf('[data-path="restore"]'), 'and precedes Restore from backup');
     assert.deepEqual([...advanced.querySelectorAll('.form-check-label')].map((node) => node.textContent), ['Debug logging', 'Attention needed sensor']);
     assert.equal(advanced.querySelector('[data-path="restore"] .form-text').textContent,
       'Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled.');
@@ -437,6 +445,58 @@ describe('settings section', () => {
     entry.click();
     assert.equal(details.open, true, 'a summary entry opens the disclosure');
     assert.equal(dom.document.activeElement, name, 'and focuses the control itself');
+  });
+});
+
+describe('devices seen', () => {
+  it('lists each pair as "{name} ({device_type}, {platform})" with a Known or Unknown tag, Copy report on Unknown rows only, and the GitHub link', () => {
+    const { root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    const block = root.querySelector('#section-settings details .ns-devices-seen');
+    assert.equal(block.querySelector('.form-label').textContent, 'Devices seen');
+    const rows = [...block.querySelectorAll('.ns-devices-seen-row')];
+    assert.deepEqual(rows.map((row) => row.querySelector('.ns-devices-seen-label').textContent),
+      ['Bike+ (home_bike_plus, home_bike)', 'row_v1 (row_v1, home_row)']);
+    assert.deepEqual(rows.map((row) => row.querySelector('.badge').textContent), ['Known', 'Unknown']);
+    assert.match(rows[0].querySelector('.badge').className, /\bns-badge-outline\b/);
+    assert.match(rows[1].querySelector('.badge').className, /\bns-badge-warning\b/);
+    assert.equal(rows[0].querySelector('.ns-copy-report'), null, 'a known device needs no report');
+    assert.equal(rows[1].querySelector('.ns-copy-report').textContent, 'Copy report');
+    const help = block.querySelector('.ns-help');
+    assert.ok(help.textContent.startsWith('The plugin keeps only the device codes it has seen (device type and platform), nothing about your workouts. '
+      + 'Copying a report shares those two codes, the workout type such as cycling or strength, and the plugin version. '
+      + 'No names, dates, class titles, or account details are included.'));
+    const link = help.querySelector('a.ns-help-link');
+    assert.equal(link.textContent, 'Report it on GitHub');
+    assert.equal(link.getAttribute('href'), 'https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml');
+    assert.equal(block.querySelector('input, select, textarea'), null, 'read-only: no control');
+  });
+
+  it('copies exactly the report text for the row, and shows None seen yet without pairs', async () => {
+    const REPORT = 'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 0.1.0-beta.2';
+    const copied = [];
+    globalThis.navigator.clipboard = { writeText: async (text) => copied.push(text) };
+    try {
+      const { root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+      root.querySelector('.ns-devices-seen-row[data-device-type="row_v1"] .ns-copy-report').click();
+      await flush();
+      assert.deepEqual(copied, [REPORT]);
+      assert.equal(root.querySelector('.ns-report-status').textContent, '', 'nothing to copy by hand');
+    } finally {
+      delete globalThis.navigator.clipboard;
+    }
+
+    // Without a clipboard the report is shown under the row to copy by hand.
+    const { root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
+    root.querySelector('.ns-devices-seen-row[data-device-type="row_v1"] .ns-copy-report').click();
+    await flush();
+    const status = root.querySelector('.ns-report-status .status-box');
+    assert.match(status.className, /\balert-warning\b/);
+    assert.ok(status.textContent.startsWith('Could not copy. Select the report below and copy it by hand.'));
+    assert.equal(status.querySelector('pre').textContent, REPORT);
+
+    const none = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] }, { ...STATUS, devicesSeen: [] });
+    assert.equal(none.root.querySelector('.ns-devices-seen-row'), null);
+    assert.equal(none.root.querySelector('.ns-devices-seen-empty').textContent, 'None seen yet. The list fills in as the plugin polls.');
   });
 });
 

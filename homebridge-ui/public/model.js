@@ -54,6 +54,20 @@ export function devicesText(devices) {
   return devices.map(deviceLabel).join(', ');
 }
 
+/**
+ * The text Copy report puts on the clipboard for an Unknown row of the Devices seen block: the two
+ * device codes, the workout type the pair was seen on, and the plugin version. Nothing else.
+ */
+export function deviceReport(device, version) {
+  return [
+    'Unknown Peloton device',
+    `device_type: ${device.deviceType}`,
+    `platform: ${device.platform}`,
+    `discipline: ${device.discipline}`,
+    `plugin: homebridge-peloton ${version}`,
+  ].join('\n');
+}
+
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

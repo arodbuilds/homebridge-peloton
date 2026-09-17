@@ -104,10 +104,10 @@ function callbackUrl(authorizeUrl, code = 'redacted-code') {
 }
 
 describe('routes', () => {
-  it('exposes the eight SPEC section 10 requests', () => {
+  it('exposes the nine SPEC section 10 requests', () => {
     const { routes } = harness();
     assert.deepEqual(Object.keys(routes).sort(), [
-      '/avatar', '/browser/finish', '/browser/start', '/connect', '/household', '/remove', '/status', '/test',
+      '/avatar', '/browser/finish', '/browser/start', '/connect', '/devices-seen', '/household', '/remove', '/status', '/test',
     ]);
   });
 
@@ -430,6 +430,43 @@ describe('/household', () => {
     fetch.route('/subscriptions', jsonResponse(500, {}));
     assert.deepEqual(await routes['/household'](), { ok: false, stage: 'api', status: 500 });
     assert.equal(fetch.count('/api/user/u-member-0003/subscriptions'), 0);
+  });
+});
+
+describe('/devices-seen', () => {
+  it('lists every pair across the records with its display name and a known flag, without duplicates or malformed entries', async () => {
+    const { routes } = harness({
+      records: {
+        a1: connected({
+          devicesSeen: [
+            { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' },
+            { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing' },
+            { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running' },
+            { deviceType: 42, platform: 'x' },
+          ],
+        }),
+        a2: connected({
+          userId: 'u-member-0003', isOwner: false, devices: undefined,
+          devicesSeen: [{ deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' }, { deviceType: 'android', platform: 'android_app' }],
+        }),
+        'u-member-0002': PROFILE,
+      },
+    });
+    assert.deepEqual(await routes['/devices-seen'](), {
+      ok: true,
+      devices: [
+        { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', name: 'Bike+', known: true },
+        { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false },
+        { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running', name: 'Apple Health import', known: true },
+        { deviceType: 'android', platform: 'android_app', discipline: '', name: 'android', known: false },
+      ],
+    });
+    assert.deepEqual(await routes['/devices-seen'](), (await routes['/devices-seen']()), 'a plain read');
+  });
+
+  it('answers an empty list when nothing has been seen', async () => {
+    const { routes } = harness();
+    assert.deepEqual(await routes['/devices-seen'](), { ok: true, devices: [] });
   });
 });
 

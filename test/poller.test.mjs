@@ -921,6 +921,66 @@ describe('last checked', () => {
   });
 });
 
+describe('devices seen', () => {
+  const seen = (h, id) => readRecord(h.store, id).devicesSeen;
+  const newDeviceLines = (h) => h.lines.info.filter((line) => line.startsWith('New Peloton device seen'));
+
+  it('records every device_type and platform pair once on the owner record, imports included, and logs nothing for known codes', async () => {
+    const h = await harness({ records: { a1: { isOwner: true } } });
+    h.fetch.route(LIST_OWNER, apiResponse('workout-complete-cycling')).route(LIST_MEMBER, apiResponse('workout-in-progress-strength'))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' }]);
+    await h.clock.advance(60_000);
+    assert.equal(h.poller.state, 'locked');
+    assert.deepEqual(seen(h, 'a1'), [
+      { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' },
+      { deviceType: 'iPhone', platform: 'iOS_app', discipline: 'strength' },
+    ], 'the member workout lands on the owner record');
+    assert.equal(seen(h, 'a2'), undefined);
+    await h.clock.advance(30_000);
+    assert.equal(seen(h, 'a1').length, 2, 'the locked polls of the same workout add nothing');
+    const record = readRecord(h.store, 'a1');
+    assert.equal(JSON.stringify(record).includes('w-str-0002'), false, 'no workout id');
+    assert.equal(JSON.stringify(record).includes('Strength Workout'), false, 'no title');
+    assert.deepEqual(newDeviceLines(h), [], 'every code here has a display name');
+
+    // An Apple Health import is recorded too, though detection ignores it.
+    h.fetch.route(WORKOUT_STR, workoutBody('w-str-0002', 'COMPLETE')).route(LIST_MEMBER, listBody('w-str-0002', 'COMPLETE'));
+    await h.clock.advance(100_000);
+    h.fetch.route(LIST_OWNER, apiResponse('workout-3p-fit-feed-running'));
+    await h.clock.advance(240_000);
+    assert.deepEqual(seen(h, 'a1').at(-1), { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running' });
+    assert.equal(seen(h, 'a1').length, 3);
+    assert.deepEqual(newDeviceLines(h), []);
+  });
+
+  it('logs one info line the first time an unknown code appears, on the polled account when no owner is known, and never again', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, listBody('w-row-0001', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(newDeviceLines(h), [
+      'New Peloton device seen: device_type=row_v1, platform=home_row. Open the settings page, Advanced, Devices seen, to report it.',
+    ]);
+    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing' }]);
+    await h.clock.advance(600_000);
+    assert.equal(newDeviceLines(h).length, 1);
+    assert.equal(seen(h, 'a1').length, 1);
+    assert.equal(readRecord(h.store, 'a1').refreshToken, 'refresh-1', 'the write keeps the rest of the record');
+    h.poller.stop();
+
+    // After a restart the pair is read back from the store, so it is not reported a second time.
+    const again = await harness({ accounts: [OWNER], records: { a1: { devicesSeen: seen(h, 'a1') } } });
+    again.fetch.route(LIST_OWNER, listBody('w-row-0002', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    again.poller.start();
+    await again.clock.advance(120_000);
+    assert.deepEqual(newDeviceLines(again), []);
+    assert.equal(seen(again, 'a1').length, 1);
+  });
+});
+
 describe('stop', () => {
   it('cancels every timer', async () => {
     const h = await harness();

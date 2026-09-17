@@ -29,6 +29,7 @@ export const FIELD_LABELS = {
   autoOff: 'Fast polling switch turns off after (minutes)',
   attention: 'Attention needed sensor',
   checkIn: 'Daily check-in time',
+  devicesSeen: 'Devices seen',
   restore: 'Restore from backup',
 };
 
@@ -225,6 +226,20 @@ export const SETTINGS = {
   attentionHelp: 'Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification.',
   checkIn: FIELD_LABELS.checkIn,
   checkInHelp: 'Once a day the plugin refreshes each account\'s session and heart-rate zones, even when nobody is working out.',
+  devicesSeen: FIELD_LABELS.devicesSeen,
+  devicesSeenHelp: 'The plugin keeps only the device codes it has seen (device type and platform), nothing about your workouts. '
+    + 'Copying a report shares those two codes, the workout type such as cycling or strength, and the plugin version. '
+    + 'No names, dates, class titles, or account details are included.',
+  devicesSeenLink: 'Report it on GitHub',
+  devicesSeenLinkUrl: 'https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml',
+  devicesSeenEmpty: 'None seen yet. The list fills in as the plugin polls.',
+  /** One row: "{display name} ({device_type}, {platform})". */
+  deviceSeenRow: (name, deviceType, platform) => `${name} (${deviceType}, ${platform})`,
+  deviceKnown: 'Known',
+  deviceUnknown: 'Unknown',
+  copyReport: 'Copy report',
+  reportCopied: 'Report copied. Paste it into the GitHub issue.',
+  copyFailed: 'Could not copy. Select the report below and copy it by hand.',
   restore: FIELD_LABELS.restore,
   restoreHelp: 'Choose a backup file. It is checked before anything changes; if it passes, the form is replaced with its contents and Save is enabled.',
   restoreFailed: 'The backup could not be loaded:',

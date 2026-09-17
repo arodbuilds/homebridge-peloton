@@ -11,8 +11,9 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
+import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
-import type { AccountRecord, AccountState } from '../store/account-store.js';
+import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
 import { HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, workoutMatches, zoneBounds, zoneForSample } from './rules.js';
 
 export type PollerState = 'standby' | 'scanning' | 'locked' | 'released';
@@ -147,6 +148,11 @@ export const GRAPH_EVERY_N = 5;
 /** A sample counts as stale once this many polls pass without a new one. */
 export const STALE_SAMPLE_POLLS = 2;
 
+/** The key a device_type and platform pair is remembered by. */
+function seenKey(deviceType: string, platform: string): string {
+  return `${deviceType}\n${platform}`;
+}
+
 /**
  * Epoch milliseconds of the next occurrence of a local "HH:MM" time strictly after now, using the
  * process time zone. A malformed time falls back to 03:00.
@@ -233,6 +239,9 @@ export class Poller {
   private lastWorkoutEndAt: number | undefined;
   private autoOffTimer: unknown;
   private checkInTimer: unknown;
+  /** Every device_type and platform pair already recorded (SPEC section 8.2), loaded from the store on first use. */
+  private seenDevices: Set<string> | undefined;
+  private seenDevicesLoading: Promise<Set<string>> | undefined;
 
   constructor(options: PollerOptions) {
     this.config = options.config;
@@ -628,6 +637,9 @@ export class Poller {
     const { account } = runtime;
     const workout = await this.store.withValidToken(account.id, (token) => this.api.getLatestWorkout(account.userId, token));
     this.debugWorkout(runtime, workout);
+    if (workout !== null) {
+      await this.recordDeviceSeen(runtime, workout);
+    }
     if (!isDetectable(workout)) {
       return;
     }
@@ -645,6 +657,7 @@ export class Poller {
     const workoutId = this.lockedWorkoutId as string;
     const workout = await this.store.withValidToken(account.id, (token) => this.api.getWorkout(workoutId, token));
     this.debugWorkout(runtime, workout);
+    await this.recordDeviceSeen(runtime, workout);
     runtime.latestWorkout = workout;
     if (workout.status === 'COMPLETE') {
       this.endWorkout(runtime);
@@ -671,6 +684,72 @@ export class Poller {
     } catch (error) {
       this.log.debug(`${account.displayName}: could not record the poll time (${error instanceof Error ? error.message : String(error)})`);
     }
+  }
+
+  /**
+   * Records the workout's device_type and platform pair the first time it is seen (SPEC section
+   * 8.2): the two codes and the fitness discipline of that workout, on the owner's record when the
+   * store knows one, else on the polled account's record. Never a workout id, title, date, or
+   * account detail. A pair whose device_type has no display name (src/devices.ts) logs one info
+   * line asking for a report. A failure to persist is logged at debug and is not a poll failure.
+   */
+  private async recordDeviceSeen(runtime: AccountRuntime, workout: Workout): Promise<void> {
+    if (workout.deviceType.length === 0 && workout.platform.length === 0) {
+      return;
+    }
+    const key = seenKey(workout.deviceType, workout.platform);
+    try {
+      const seen = await this.loadSeenDevices();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      if (!isKnownDevice(workout.deviceType)) {
+        this.log.info(
+          `New Peloton device seen: device_type=${workout.deviceType}, platform=${workout.platform}.`
+          + ' Open the settings page, Advanced, Devices seen, to report it.',
+        );
+      }
+      let targetId = runtime.account.id;
+      for (const [id, record] of await this.store.loadAll()) {
+        if (record.isOwner === true) {
+          targetId = id;
+          break;
+        }
+      }
+      const record = await this.store.load(targetId);
+      if (record === undefined) {
+        return;
+      }
+      const existing = record.devicesSeen ?? [];
+      if (existing.some((entry) => seenKey(entry.deviceType, entry.platform) === key)) {
+        return;
+      }
+      const entry: SeenDevice = { deviceType: workout.deviceType, platform: workout.platform, discipline: workout.fitnessDiscipline };
+      await this.store.save(targetId, { ...record, devicesSeen: [...existing, entry] });
+    } catch (error) {
+      this.log.debug(`${runtime.account.displayName}: could not record the device seen (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+
+  /** The pairs every stored record already carries, read once and kept in memory. */
+  private loadSeenDevices(): Promise<Set<string>> {
+    if (this.seenDevices !== undefined) {
+      return Promise.resolve(this.seenDevices);
+    }
+    this.seenDevicesLoading ??= this.store.loadAll().then((records) => {
+      const seen = new Set<string>();
+      for (const record of records.values()) {
+        for (const entry of record.devicesSeen ?? []) {
+          seen.add(seenKey(entry.deviceType, entry.platform));
+        }
+      }
+      this.seenDevices = seen;
+      return seen;
+    }).finally(() => {
+      this.seenDevicesLoading = undefined;
+    });
+    return this.seenDevicesLoading;
   }
 
   private handlePollError(runtime: AccountRuntime, error: unknown): 'failed' | 'dropped' {

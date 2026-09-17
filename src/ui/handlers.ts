@@ -12,6 +12,7 @@ import { Buffer } from 'node:buffer';
 import type { Me, Subscription, Workout } from '../api/peloton-api.js';
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError, type AuthStage, type BrowserStart, type Tokens } from '../auth/peloton-auth.js';
+import { deviceDisplayName, isKnownDevice } from '../devices.js';
 import { isDetectable } from '../poller/rules.js';
 import { type ConnectStore, type LoginFn, applyHousehold, applyProfile, connectAccount, connectWithTokens } from '../store/account-connect.js';
 import type { AccountRecord, AccountState } from '../store/account-store.js';
@@ -71,6 +72,23 @@ export interface StatusResponse {
   accounts: AccountSummary[];
   devices: DeviceSummary[];
   version: string;
+}
+
+/** One device_type and platform pair the poller has seen, for the Devices seen block (SPEC section 10). */
+export interface DeviceSeenSummary {
+  deviceType: string;
+  platform: string;
+  /** The fitness discipline of the workout the pair was first seen on. */
+  discipline: string;
+  /** The display name from src/devices.ts, or the raw device_type when it has none. */
+  name: string;
+  /** True when device_type has a display name; an unknown pair is the one to report. */
+  known: boolean;
+}
+
+export interface DevicesSeenResponse {
+  ok: true;
+  devices: DeviceSeenSummary[];
 }
 
 export interface AccountResponse {
@@ -142,7 +160,13 @@ export class UiHandlers {
       '/household': () => this.household(),
       '/remove': (payload) => this.remove(payload),
       '/avatar': (payload) => this.avatar(payload),
+      '/devices-seen': () => this.devicesSeen(),
     };
+  }
+
+  /** Every device_type and platform pair the poller has recorded, across the stored records, with its display name. */
+  async devicesSeen(): Promise<DevicesSeenResponse> {
+    return { ok: true, devices: devicesSeenOf(await this.options.store.loadAll()) };
   }
 
   /**
@@ -453,6 +477,36 @@ export function devicesOf(records: Map<string, AccountRecord>): DeviceSummary[] 
       if ((device.name !== null || device.group.length > 0) && !devices.some((known) => (known.id || known.name || known.group) === key)) {
         devices.push(device);
       }
+    }
+  }
+  return devices;
+}
+
+/**
+ * The device_type and platform pairs across every record (the poller writes them on the owner's record,
+ * or on the polled account's when no owner is known), in order of first appearance and without
+ * duplicates. An entry without a string device_type and platform is left out.
+ */
+export function devicesSeenOf(records: Map<string, AccountRecord>): DeviceSeenSummary[] {
+  const devices: DeviceSeenSummary[] = [];
+  const keys = new Set<string>();
+  for (const record of records.values()) {
+    for (const entry of record.devicesSeen ?? []) {
+      if (typeof entry?.deviceType !== 'string' || typeof entry.platform !== 'string') {
+        continue;
+      }
+      const key = `${entry.deviceType}\n${entry.platform}`;
+      if (keys.has(key)) {
+        continue;
+      }
+      keys.add(key);
+      devices.push({
+        deviceType: entry.deviceType,
+        platform: entry.platform,
+        discipline: typeof entry.discipline === 'string' ? entry.discipline : '',
+        name: deviceDisplayName(entry.deviceType),
+        known: isKnownDevice(entry.deviceType),
+      });
     }
   }
   return devices;
