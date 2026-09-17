@@ -46,7 +46,7 @@ Plain JSON bodies, one per call and case.
 | subscriptions.json | GET /api/user/{id}/subscriptions with two entries, one unused, in the live shape of the second Chrome pass on the Pi: attached_devices as device_id, device_name (null for the Guide), device_group, and last_attached_at; shared_user_set with name as one string; bike_device_name and tread_device_name at the top level |
 | workout-in-progress-cycling.json | GET /api/user/{id}/workouts?limit=1&sort_by=-created |
 | workout-complete-cycling.json | same, COMPLETE |
-| workout-in-progress-strength.json | same, strength |
+| workout-in-progress-strength.json | same, a strength class taken in the iPhone app (device_type iPhone, platform iOS_app, as observed on September 16, 2026) |
 | workout-3p-fit-feed-running.json | same, a run imported from Apple Health (is_3p_fit_feed_workout true, device_type apple_health, platform iOS_app as the Pi ride tests reported), which detection ignores |
 | workouts-empty.json | same, no workouts yet |
 | workout-single-in-progress-cycling.json | GET /api/workout/{id}, the same object as a list entry, IN_PROGRESS |

@@ -271,13 +271,16 @@ describe('lock-on', () => {
       workoutTrigger({ id: 't-run', activities: ['running'] }),
       workoutTrigger({ id: 't-bike', device: 'bike' }),
       workoutTrigger({ id: 't-tread', device: 'tread' }),
+      workoutTrigger({ id: 't-tv', device: 'appletv' }),
+      workoutTrigger({ id: 't-app', device: 'app' }),
     ];
+    const states = (h) => Object.fromEntries(h.poller.triggerStates);
     // A Bike+ ride: device_type home_bike_plus, platform home_bike.
     const bike = await harness({ accounts: [OWNER], config: { triggers } });
     bike.fetch.route(LIST_OWNER, apiResponse('workout-in-progress-cycling')).route(WORKOUT_CYC, apiResponse('workout-single-in-progress-cycling'));
     bike.poller.start();
     await bike.clock.advance(0);
-    assert.deepEqual([...bike.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', true], ['t-tread', false]]);
+    assert.deepEqual(states(bike), { 't-any': true, 't-member': false, 't-run': false, 't-bike': true, 't-tread': false, 't-tv': false, 't-app': false });
     assert.match(bike.lines.debug[0], /device_type=home_bike_plus platform=home_bike$/);
     bike.poller.stop();
 
@@ -287,18 +290,28 @@ describe('lock-on', () => {
       .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
     tread.poller.start();
     await tread.clock.advance(0);
-    assert.deepEqual([...tread.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', true], ['t-bike', false], ['t-tread', true]]);
+    assert.deepEqual(states(tread), { 't-any': true, 't-member': false, 't-run': true, 't-bike': false, 't-tread': true, 't-tv': false, 't-app': false });
     assert.match(tread.lines.debug[0], /device_type=prism platform=home_tread$/);
     tread.poller.stop();
 
-    // An app workout matches neither hardware filter; nothing about devices is logged at info.
+    // A class in the iPhone app (device_type iPhone, platform iOS_app) matches the app filter, not the hardware ones or Apple TV.
     const app = await harness({ accounts: [OWNER], config: { triggers } });
-    app.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iOS', platform: 'ios' }))
+    app.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'strength', device_type: 'iPhone', platform: 'iOS_app' }))
       .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
     app.poller.start();
     await app.clock.advance(0);
-    assert.deepEqual([...app.poller.triggerStates], [['t-any', true], ['t-member', false], ['t-run', false], ['t-bike', false], ['t-tread', false]]);
-    assert.equal(app.lines.info.some((line) => line.includes('device')), false);
+    assert.deepEqual(states(app), { 't-any': true, 't-member': false, 't-run': false, 't-bike': false, 't-tread': false, 't-tv': false, 't-app': true });
+    assert.match(app.lines.debug[0], /device_type=iPhone platform=iOS_app$/);
+    app.poller.stop();
+
+    // A class on the Apple TV app (device_type apple_tv, platform apple_tv) matches the Apple TV filter only.
+    const tv = await harness({ accounts: [OWNER], config: { triggers } });
+    tv.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'yoga', device_type: 'apple_tv', platform: 'apple_tv' }))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    tv.poller.start();
+    await tv.clock.advance(0);
+    assert.deepEqual(states(tv), { 't-any': true, 't-member': false, 't-run': false, 't-bike': false, 't-tread': false, 't-tv': true, 't-app': false });
+    assert.equal(tv.lines.info.some((line) => line.includes('device')), false);
   });
 });
 

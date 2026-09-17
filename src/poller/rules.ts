@@ -9,18 +9,26 @@ import type { DeviceFilter, HrZoneTriggerConfig, WorkoutTriggerConfig } from '..
 import type { StoredZone } from '../store/account-store.js';
 
 /**
- * The workout platform each device filter stands for (SPEC section 8.3). Confirmed on the Pi
- * tests: the Bike+ reports device_type home_bike_plus with platform home_bike, the Tread reports
- * device_type prism with platform home_tread, the Guide reports device_type t21n8m2 with platform
- * tiger (observed 11 September 2026), and an Apple Health import reports device_type apple_health
- * with platform iOS_app. device_type is the hardware model code and stays in the debug log;
- * platform is what the filter compares.
+ * The workout platform each hardware or Apple TV filter stands for (SPEC section 8.3). Observed live
+ * on September 11 to 16, 2026: the Bike+ reports device_type home_bike_plus with platform home_bike,
+ * the Tread device_type prism with platform home_tread, the Guide device_type t21n8m2 with platform
+ * tiger, and the Apple TV app device_type apple_tv with platform apple_tv. device_type is the
+ * hardware model code and stays in the debug log; platform is what the filter compares.
  */
-export const PLATFORM_BY_DEVICE: Readonly<Record<Exclude<DeviceFilter, 'any'>, string>> = {
+export const PLATFORM_BY_DEVICE: Readonly<Record<Exclude<DeviceFilter, 'any' | 'app'>, string>> = {
   bike: 'home_bike',
   tread: 'home_tread',
   guide: 'tiger',
+  appletv: 'apple_tv',
 };
+
+/**
+ * The platforms the "app" filter covers: a class taken in the Peloton app on a phone or tablet. The
+ * iPhone and iPad apps report platform iOS_app (device_type iPhone or iPad); android_app is the
+ * expected Android code, not yet observed. An Apple Health import also carries platform iOS_app, so
+ * the filter also requires is_peloton_originated_workout true.
+ */
+export const APP_PLATFORMS: readonly string[] = ['iOS_app', 'android_app'];
 
 /**
  * True when the workout takes part in detection. Third-party fitness feed imports never start or
@@ -36,12 +44,16 @@ export function isDetectable(workout: Workout | null | undefined): workout is Wo
 /**
  * Compares a trigger's device filter with the workout's platform: "any" matches every workout,
  * "bike" matches platform home_bike, "tread" matches platform home_tread, "guide" matches platform
- * tiger. Workouts carry no device id, so this is the whole device rule; an import or an app workout
- * matches only "any".
+ * tiger, "appletv" matches platform apple_tv, and "app" matches platform iOS_app or android_app when
+ * the workout is Peloton originated. Workouts carry no device id, so this is the whole device rule;
+ * an import matches only "any".
  */
 export function deviceMatches(device: DeviceFilter | string, workout: Workout): boolean {
   if (device === 'any') {
     return true;
+  }
+  if (device === 'app') {
+    return workout.isPelotonOriginatedWorkout && APP_PLATFORMS.includes(workout.platform);
   }
   const platform = (PLATFORM_BY_DEVICE as Record<string, string | undefined>)[device];
   return platform !== undefined && workout.platform === platform;

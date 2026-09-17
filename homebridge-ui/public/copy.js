@@ -163,8 +163,9 @@ export const TRIGGERS = {
   whoChoose: 'Choose a member',
   whoHelp: 'Zones come from this member\'s Peloton profile.',
   device: FIELD_LABELS.device,
-  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread', guide: 'Guide' },
-  deviceHelp: 'Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide.',
+  deviceOptions: { any: 'Any device', bike: 'Bike', tread: 'Tread', guide: 'Guide', appletv: 'Apple TV', app: 'Phone or tablet app' },
+  deviceHelp: 'Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. '
+    + 'Apple TV and Phone or tablet app are classes taken in the Peloton app.',
   activities: FIELD_LABELS.activities,
   activityLabels: {
     cycling: 'Cycling', running: 'Running', walking: 'Walking', rowing: 'Rowing', strength: 'Strength', yoga: 'Yoga',

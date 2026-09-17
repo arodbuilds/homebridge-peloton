@@ -90,14 +90,20 @@ Last workout time: /api/me last_workout_at is stale (the build 2 probe returned 
 
 Third-party imports: workouts with is_3p_fit_feed_workout true are runs and other activities synced in from Apple Health, Strava, or Fitbit. They appear in the workouts list with COMPLETE status and a created_at of the sync time, and can land at the top of the list while a Peloton workout is in progress. Detection ignores them (8.2).
 
-Device codes (Pi tests, 11 September 2026), the facts behind the device rule in 8.3:
+Device codes, the facts behind the device rule in 8.3 and the display names in src/devices.ts. All rows but the original Bike were observed live on the test membership between September 11 and 16, 2026; the original Bike's codes come from public logs of 2020 and have not been observed by us.
 
-| Hardware or source | device_type | platform |
-| --- | --- | --- |
-| Bike+ | home_bike_plus | home_bike |
-| Tread | prism | home_tread |
-| Guide | t21n8m2 | tiger |
-| Apple Health import | apple_health | iOS_app |
+| Hardware or source | device_type | platform | is_peloton_originated_workout | Device filter |
+| --- | --- | --- | --- | --- |
+| Bike (original) | home_bike_v1 | home_bike | true | bike |
+| Bike+ | home_bike_plus | home_bike | true | bike |
+| Tread | prism | home_tread | true | tread |
+| Guide | t21n8m2 | tiger | true | guide |
+| Apple TV app | apple_tv | apple_tv | true | appletv |
+| iPhone app | iPhone | iOS_app | true | app |
+| iPad app | iPad | iOS_app | true | app |
+| Apple Health import | apple_health | iOS_app | false (is_3p_fit_feed_workout true) | none, ignored by detection |
+
+Row and Android app codes have not been observed (15). The plugin records every device_type and platform pair it sees so an unknown one can be reported from the settings page (8.2, 10).
 
 Start latency on both rides was within one fastInterval (10 s) of the workout starting.
 
@@ -155,8 +161,8 @@ Rules:
 - Account entries written by the settings page carry id, email, displayName, and userId (the last two from the store when config lacks them), and password only when the user entered one on the page or one was already stored; a stored password is written back unchanged and never shown in the form.
 - who is "anyone" or an account userId. hrZone triggers never use "anyone".
 - activities absent or empty means all.
-- device is "any", "bike", "tread", or "guide". Any other value becomes "any" with a warn line.
-- config.schema.json mirrors this shape with the defaults above, the settings page copy as titles and descriptions, and marks the custom UI (customUi true, customUiPath ./homebridge-ui). It carries the constraints the page enforces: fastInterval minimum 5, standbyInterval 0 or 30 and above, name and triggers[].name required, an hrZone trigger's who a member (never "anyone"), device one of any, bike, tread, guide, and never fastSwitch false together with standbyInterval 0. Trigger names must differ from each other (case-insensitive); the page enforces it and the schema states it, since JSON Schema cannot express it across items.
+- device is "any", "bike", "tread", "guide", "appletv", or "app". Any other value becomes "any" with a warn line.
+- config.schema.json mirrors this shape with the defaults above, the settings page copy as titles and descriptions, and marks the custom UI (customUi true, customUiPath ./homebridge-ui). It carries the constraints the page enforces: fastInterval minimum 5, standbyInterval 0 or 30 and above, name and triggers[].name required, an hrZone trigger's who a member (never "anyone"), device one of any, bike, tread, guide, appletv, app, and never fastSwitch false together with standbyInterval 0. Trigger names must differ from each other (case-insensitive); the page enforces it and the schema states it, since JSON Schema cannot express it across items.
 - The settings page (design/README.md) is the normal editor. It pushes the block through updatePluginConfig and the host's Save writes config.json; the plugin's UI server never writes config.json.
 - Validation (config.ts): invalid values are clamped or defaulted with one warn line each and never a crash. fastInterval has a floor of 5, standbyInterval a floor of 0, holdAfterEnd and holdTime a floor of 0, zone a range of 1 to 5, fastSwitchAutoOffMinutes a floor of 1, dailyCheckIn must be HH:MM. An unknown trigger type becomes workout and an unknown accessory kind occupancy. A missing, duplicate, or unsafe id is replaced by a generated id for the run with a warn line asking the user to save the config from the settings page so the id persists. An hrZone trigger whose who is "anyone" is kept, warned about, and never turns on.
 
@@ -214,7 +220,7 @@ One loop per platform. All timing uses an injectable clock so tests can drive it
 
 ### 8.3 Trigger evaluation (pure, in rules.ts)
 
-Workout trigger matches when: who is "anyone" or equals the account userId; activities is empty or contains the workout's fitness_discipline; device is "any" or matches. Device matching is by the workout's platform: "bike" matches platform home_bike, "tread" matches platform home_tread, "guide" matches platform tiger; "any" matches every workout. Workouts carry no device id field (settled by the build 2 probe) and device_type is the hardware model code (home_bike_plus, prism, t21n8m2), which stays in the debug poll line but is not compared. App workouts (platform ios) and imports (platform iOS_app) match only "any". The who and activities checks run first.
+Workout trigger matches when: who is "anyone" or equals the account userId; activities is empty or contains the workout's fitness_discipline; device is "any" or matches. Device matching is by the workout's platform: "bike" matches platform home_bike (the Bike and the Bike+), "tread" matches platform home_tread, "guide" matches platform tiger, "appletv" matches platform apple_tv, and "app" matches platform iOS_app or android_app when is_peloton_originated_workout is true (the iPhone, iPad, and Android apps); "any" matches every workout. Workouts carry no device id field (settled by the build 2 probe) and device_type is the hardware model code (home_bike_plus, prism, t21n8m2, apple_tv, iPhone, iPad), which stays in the debug poll line and in the devices seen list (8.2) but is not compared. An import (platform iOS_app with is_peloton_originated_workout false) is never detectable (8.2) and would match only "any"; a platform the plugin has not seen matches only "any". The page labels are Any device, Bike, Tread, Guide, Apple TV, and Phone or tablet app, with the caption "Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. Apple TV and Phone or tablet app are classes taken in the Peloton app." The who and activities checks run first.
 
 The sensor is on from start until end plus holdAfterEnd seconds. A new matching workout during the hold keeps it on without a gap. Trigger changes are logged and raised as events at the moment they happen: holds run on their own timers, not on the next poll.
 

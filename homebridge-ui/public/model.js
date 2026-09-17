@@ -34,7 +34,7 @@ export const ACTIVITIES = [
   'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio', 'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
 ];
 
-export const DEVICES = ['any', 'bike', 'tread', 'guide'];
+export const DEVICES = ['any', 'bike', 'tread', 'guide', 'appletv', 'app'];
 
 /**
  * How one device from /status reads on the Devices line: its name with the group after it in

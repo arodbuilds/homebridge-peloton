@@ -132,14 +132,16 @@
             },
             "device": {
               "title": "Device",
-              "description": "Bike is a ride on the Bike or Bike+, Tread is a workout on the Tread or Tread+, Guide is a class taken on the Peloton Guide.",
+              "description": "Bike and Tread cover every model of each. Guide is a class on the Peloton Guide. Apple TV and Phone or tablet app are classes taken in the Peloton app.",
               "type": "string",
               "default": "any",
               "oneOf": [
                 { "title": "Any device", "enum": ["any"] },
                 { "title": "Bike", "enum": ["bike"] },
                 { "title": "Tread", "enum": ["tread"] },
-                { "title": "Guide", "enum": ["guide"] }
+                { "title": "Guide", "enum": ["guide"] },
+                { "title": "Apple TV", "enum": ["appletv"] },
+                { "title": "Phone or tablet app", "enum": ["app"] }
               ]
             },
             "holdAfterEnd": {
