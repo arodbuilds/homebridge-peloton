@@ -122,6 +122,7 @@ src/
   accessories/         trigger sensor, fast polling switch, attention sensor
   ui/server.ts         @homebridge/plugin-ui-utils server (10)
   config.ts            config types and validation (6): defaults, clamping, generated ids
+  devices.ts           the one table from device_type to display name (4.2, 10); an unmapped code displays as the raw code
   scripts/auth-probe.mts   standalone auth probe for the Pi, compiled to dist/scripts/auth-probe.mjs; imports the auth and api modules and nothing else
 homebridge-ui/public/  settings page (design/README.md)
 fixtures/              recorded, sanitised JSON used by tests
