@@ -5,7 +5,7 @@
   "customUi": true,
   "customUiPath": "./homebridge-ui",
   "strictValidation": false,
-  "headerDisplay": "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts, ends, or reaches a heart-rate zone. Set up in two steps: connect your Peloton account, then add a trigger for what you want to automate. Save, restart Homebridge, and use the sensor in a HomeKit automation. Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice.",
+  "headerDisplay": "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends. Set up in two steps: connect your Peloton account, then add a trigger for what you want to automate. Save, restart Homebridge, and use the sensor in a HomeKit automation. Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice.",
   "footerDisplay": "After saving, restart Homebridge. Your sensors appear in the Home app. Open Automations, choose a sensor as the trigger, and pick what should happen when a workout starts.",
   "schema": {
     "type": "object",

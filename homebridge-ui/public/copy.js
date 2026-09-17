@@ -36,7 +36,7 @@ export const FIELD_LABELS = {
 
 export const PAGE = {
   bannerAlt: 'Peloton. HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones.',
-  lead1: 'Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts, ends, or reaches a heart-rate zone.',
+  lead1: 'Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends.',
   lead2: 'Set up in two steps: connect your Peloton account, then add a trigger for what you want to automate. '
     + 'Save, restart Homebridge, and use the sensor in a HomeKit automation.',
   leadNote: 'Not affiliated with or endorsed by Peloton Interactive. Uses Peloton\'s undocumented member API, which can change without notice.',
