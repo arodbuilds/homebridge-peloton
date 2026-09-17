@@ -1,6 +1,6 @@
 # homebridge-peloton SPEC
 
-Version: 1.0.0 (September 17, 2026, the first general release: the Apple TV and Phone or tablet app device options, the device name table, the devices seen and the device report, the fast interval kept after a workout ends, the log title fallback, the README and the version)
+Version: 1.0.1 (September 17, 2026: the settings page intro copy no longer offers heart-rate zones, the 1.0.0 screenshots, and the version)
 Status: source of truth for the build. design/README.md is normative for the settings page layout, copy, and states; this document is normative for everything else. Where the two disagree, this document wins and the design README gets a clarification in the same PR.
 
 ## 1. Purpose
@@ -444,3 +444,12 @@ The first general release (September 17, 2026): the Apple TV and Phone or tablet
 - 14: 1.0.0 to the latest tag, the README as it stands.
 - 15: Row hardware widened to Row and Android codes; verification-required accounts and the Heart-rate zone offering remain.
 - design/README.md: the Device options, the Keep fast polling field, the Devices seen block and its states, and the version (listed there under Clarifications from 1.0.0).
+
+### 1.0.1 clarifications
+
+A copy and asset release (September 17, 2026). Nothing in section 2 changes and the code is untouched.
+
+- 10: the settings page intro paragraph one reads "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends.", in homebridge-ui/public/copy.js and in the headerDisplay of config.schema.json, so the page no longer offers heart-rate zones while item 10 of section 2 keeps them out of the release. The banner tagline is the artwork's and stays. Section 1 still states the plugin's purpose, which includes the zone triggers the code carries.
+- 14: assets/screenshots/trigger-workout.png and settings.png are 1.0.0 captures (the 1.0.0 device caption; Advanced open with Keep fast polling after a workout ends and the Devices seen block); the README's settings caption names what the capture shows. The other three captures are unchanged.
+- The version is 1.0.1 in package.json, the test literals and the bug report form.
+- design/README.md: the intro copy, the screenshot notes and the version (listed there under Clarifications from 1.0.1).

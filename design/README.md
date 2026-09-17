@@ -63,7 +63,7 @@ From `spec/round-two-prompts.md`:
 1. Plugin banner (4:1 image, full container width, 6 px radius, 16 px top margin)
 2. Unsaved-changes bar (shell M1): "You have unsaved changes from earlier. Restore them?" RESTORE / DISCARD. Shown only when a draft is stored that differs from the saved configuration; a draft is written only once something changed on the page, never holds passwords, and is never offered on a page that opens with no saved Peloton configuration.
 3. Non-blocking reconnect banner (after a save with an account in Reconnect needed): "1 account needs to be reconnected. Everything else is saved." Warning colours.
-4. Intro paragraph one: "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts, ends, or reaches a heart-rate zone."
+4. Intro paragraph one: "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends."
 5. Intro paragraph two: "Set up in two steps: connect your Peloton account, then add a trigger for what you want to automate. Save, restart Homebridge, and use the sensor in a HomeKit automation."
 6. Muted line (12.6 px): "Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumented member API, which can change without notice."
 7. Sections: **Accounts**, **Triggers**, **Polling**, **Settings**
@@ -246,6 +246,12 @@ The first general release (SPEC.md section 16, 1.0.0 clarifications) settled the
 - Devices seen: the read-only block described under Settings, placed after Daily check-in time and before Restore from backup. Its rows come from the plugin's UI server (/devices-seen), read with the page and again after every account refresh; the page holds no device table of its own, the server sends each row's display name and known flag. The copy uses the async clipboard API where the page has it and a hidden textarea with the copy command elsewhere, since the Homebridge UI is usually served over plain http.
 - Version: the footer reads 1.0.0 from package.json through /status.
 
+## Clarifications from 1.0.1
+The 1.0.1 release (SPEC.md section 16, 1.0.1 clarifications) settled these.
+- Intro paragraph one reads "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends." on the page and in the `headerDisplay` of `config.schema.json`, matching the README while Heart-rate zone triggers are not offered. The banner tagline stays as it is, since the artwork is unchanged.
+- Screenshots: `trigger-workout.png` and `settings.png` under `assets/screenshots/` are 1.0.0 captures (listed under Assets below); the README's settings caption names the Keep fast polling field and the Devices seen block they show.
+- Version: the footer reads 1.0.1 from package.json through /status.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 
@@ -267,7 +273,7 @@ Every token in `peloton.css` reads the host's Bootstrap variable with the light 
 
 ## Assets (`assets/`)
 - `peloton-banner.png` 1280 × 320 page banner, regenerated in build 4 on the same layout (mark, divider, wordmark) with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones."; no em dash. The settings page ships its own copy under `homebridge-ui/public/`.
-- `screenshots/` the five masked settings page screenshots: accounts, trigger-workout, polling, settings (the four the README walks through) and trigger-zone (kept for when the Heart-rate zone offering returns).
+- `screenshots/` the five masked settings page screenshots: accounts, trigger-workout, polling, settings (the four the README walks through) and trigger-zone (kept for when the Heart-rate zone offering returns). `trigger-workout.png` and `settings.png` are 1.0.0 captures: the Workout card with the Apple TV and Phone or tablet app device caption, and Settings with Advanced open showing Keep fast polling after a workout ends and the Devices seen block. `accounts.png`, `polling.png` and `trigger-zone.png` are beta.2 captures of sections 1.0.0 did not change.
 - `peloton-footer.svg` 24-grid footer glyph, currentColor, render at 20 px. Inline it so it follows the host theme.
 - `peloton-mark.svg` mark alone; `peloton-dark.svg` / `peloton-light.svg` 192 tiles; `peloton-192.png`, `peloton-512.png` plugin listing rasters.
 - `ICONS.md` geometry and colour notes for the mark.

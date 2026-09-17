@@ -89,7 +89,7 @@ Any trigger that means "a workout is about to start" works in place of the light
 
 ### 4. Settings and Advanced
 
-![The Settings section with Advanced open: the auto-off period, the Attention needed sensor, the daily check-in time, and Restore from backup](assets/screenshots/settings.png)
+![The Settings section with Advanced open: the auto-off period, Keep fast polling after a workout ends, the Attention needed sensor, the daily check-in time, Devices seen, and Restore from backup](assets/screenshots/settings.png)
 
 Settings holds one Advanced disclosure, collapsed until something inside it is changed:
 

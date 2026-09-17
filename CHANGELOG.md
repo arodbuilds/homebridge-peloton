@@ -2,6 +2,16 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.1 (2026-09-17)
+
+A copy and asset release. The settings page intro matches the README and the 1.0.0 release notes: Heart-rate zone triggers are not offered, so the page no longer says they are. No code changes.
+
+### Changed
+
+- Settings page intro paragraph one reads "Turns Peloton workouts into HomeKit sensors so automations can run when a workout starts or ends.", in the page copy and in the `headerDisplay` of `config.schema.json`. The banner tagline stays.
+- `assets/screenshots/trigger-workout.png` and `settings.png` are 1.0.0 captures, moved from the repository root where the upload landed into `assets/screenshots/` where the README points. The README's settings caption names the Keep fast polling field and the Devices seen block the capture shows.
+- Version 1.0.1 in package.json and the version literals in the tests and the bug report form. SPEC section 16 and design/README.md carry the 1.0.1 clarifications.
+
 ## 1.0.0 (2026-09-17)
 
 The first general release, to the npm latest tag. Every device the test membership can produce is named, the Device filter covers the apps, the plugin records the device codes it sees so a Row or Android report is a copy and paste, and a second workout after the first is caught quickly whether or not the fast polling switch is on.
