@@ -36,7 +36,7 @@ At v1.3.2 the shell is TypeScript under `homebridge-ui/src/` in that repository,
 7. Estimate line: counts Connected plus Checking accounts (export), and keeps the repo's fallback to the configured count, else 1, while none is connected.
 8. Fast polling switch Name: always shown (export).
 9. Avatar fallback: the repo's initials on a disc stand. The export's letter placeholder is Peloton's own placeholder image, which the decisions above rule out, and the disc follows the host theme without image assets.
-10. Banner: the export's `peloton-banner-beta2.png` is the same artwork and tagline as `assets/peloton-banner.png` (only file metadata differs), so the repo's copy stands.
+10. Banner: the export's `peloton-banner-beta2.png` is the same artwork and tagline as `assets/peloton-banner.png` (only file metadata differs), so the repo's copy stands. From 1.0.2 the repo's copy carries the tagline under Assets below on the same artwork.
 11. Version: 1.0.0 (0.1.0-beta.2 in PR 2), read from package.json.
 12. Settings placement: everything under Advanced in the fixed order (export).
 13. Empty trigger Name: "Name is required." from the label table (shell W4).
@@ -272,7 +272,7 @@ Every token in `peloton.css` reads the host's Bootstrap variable with the light 
 - Banner artwork colours (the one place the plugin carries colour): field #6E2220, mark #F2F2F3.
 
 ## Assets (`assets/`)
-- `peloton-banner.png` 1280 × 320 page banner, regenerated in build 4 on the same layout (mark, divider, wordmark) with the tagline "HomeKit sensors driven by Peloton workouts: workout in progress and heart-rate zones."; no em dash. The settings page ships its own copy under `homebridge-ui/public/`.
+- `peloton-banner.png` 1280 × 320 page banner, regenerated in 1.0.2 on the same layout as build 4 (mark, divider, wordmark, the same colours and type) with the tagline "HomeKit sensors driven by Peloton workouts: run scenes when a workout starts or ends."; no em dash. The settings page ships its own copy under `homebridge-ui/public/`, and `bannerAlt` in copy.js and the README alt text read the same tagline.
 - `screenshots/` the five masked settings page screenshots: accounts, trigger-workout, polling, settings (the four the README walks through) and trigger-zone (kept for when the Heart-rate zone offering returns). `trigger-workout.png` and `settings.png` are 1.0.0 captures: the Workout card with the Apple TV and Phone or tablet app device caption, and Settings with Advanced open showing Keep fast polling after a workout ends and the Devices seen block. `accounts.png`, `polling.png` and `trigger-zone.png` are beta.2 captures of sections 1.0.0 did not change.
 - `peloton-footer.svg` 24-grid footer glyph, currentColor, render at 20 px. Inline it so it follows the host theme.
 - `peloton-mark.svg` mark alone; `peloton-dark.svg` / `peloton-light.svg` 192 tiles; `peloton-192.png`, `peloton-512.png` plugin listing rasters.

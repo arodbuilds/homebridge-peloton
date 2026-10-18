@@ -1,4 +1,4 @@
-<img src="assets/peloton-banner.png" alt="Peloton: HomeKit sensors driven by Peloton workouts" width="100%">
+<img src="assets/peloton-banner.png" alt="Peloton. HomeKit sensors driven by Peloton workouts: run scenes when a workout starts or ends." width="100%">
 
 [![verified-by-homebridge](https://img.shields.io/badge/_-verified-blueviolet?color=%23491F59&style=flat&logoColor=%23FFFFFF&logo=homebridge)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 [![npm version](https://img.shields.io/npm/v/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
