@@ -21,7 +21,9 @@ async function packedPaths() {
   const [command, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];
   const options = { cwd: ROOT, maxBuffer: 16 * 1024 * 1024 };
   const { stdout } = await promisify(execFile)(command, [...args, 'pack', '--dry-run', '--json', '--ignore-scripts'], options);
-  const [pack] = JSON.parse(stdout);
+  // npm 10 and 11 print an array of packs; npm 12 prints an object keyed by package name.
+  const parsed = JSON.parse(stdout);
+  const pack = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
   return pack.files.map((file) => file.path);
 }
 
