@@ -177,7 +177,7 @@ The network is always mocked in tests. Fixtures live under `fixtures/`, sanitise
 
 ### Auth probe
 
-The probe runs the headless sign-in on its own, without Homebridge, which is the first thing to try when sign-in stops working. Build first, then run from a directory where a token file may be written:
+The probe is not part of the npm package and runs only from a clone of this repository. It runs the headless sign-in on its own, without Homebridge, which is the first thing to try when sign-in stops working. Build first, then run from a directory where a token file may be written:
 
 ```shell
 npm run build
