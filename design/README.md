@@ -252,6 +252,11 @@ The 1.0.1 release (SPEC.md section 16, 1.0.1 clarifications) settled these.
 - Screenshots: `trigger-workout.png` and `settings.png` under `assets/screenshots/` are 1.0.0 captures (listed under Assets below); the README's settings caption names the Keep fast polling field and the Devices seen block they show.
 - Version: the footer reads 1.0.1 from package.json through /status.
 
+## Clarifications from 1.0.2
+The 1.0.2 release (SPEC.md section 16, 1.0.2 clarifications) settled these.
+- Banner: the tagline reads "HomeKit sensors driven by Peloton workouts: run scenes when a workout starts or ends.", so the artwork no longer promises heart-rate zone triggers while they are not offered. `assets/peloton-banner.png` and the page's copy under `homebridge-ui/public/` are regenerated on the same layout, colours and type (listed under Assets below), and `bannerAlt` in copy.js and the README alt text read the same tagline. The Daily check-in caption keeps "heart-rate zones", since the check-in refreshes them.
+- Version: the footer reads 1.0.2 from package.json through /status.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 
