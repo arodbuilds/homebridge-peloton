@@ -28,6 +28,7 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "!dist/scripts",
     "homebridge-ui/public",
     "homebridge-ui/server.js",
     "config.schema.json",
