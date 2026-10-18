@@ -2,6 +2,18 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.2 (2026-10-18)
+
+A packaging and copy release, prepared as the plugin was verified by Homebridge (homebridge/plugins#1239). The developer auth probe stays out of the npm package, and nothing in the package description or the banner promises heart-rate zone triggers, which 1.0.x does not offer. No runtime code changes.
+
+### Changed
+
+- The developer auth probe is no longer published to npm, at the suggestion of the Homebridge verification review (homebridge/plugins#1239). `"!dist/scripts"` in the `files` array of package.json keeps `auth-probe.mjs` and its `.d.ts` and `.map` files out of the package. The source stays in `src/scripts/` and `npm run build` still compiles it, so the probe runs from a clone. A package suite (`test/package.test.mjs`) runs `npm pack --dry-run --json` and fails if any path under `dist/scripts/` is in the package, if `dist/index.js`, `config.schema.json`, `homebridge-ui/server.js`, `homebridge-ui/public/index.html`, `README.md`, `LICENSE` or `CHANGELOG.md` is missing, or if any path is outside the files list.
+- README, Auth probe: the section opens by saying the probe is not part of the npm package and runs only from a clone of this repository.
+- Copy clarifications so nothing promises heart-rate zone triggers, which 1.0.x does not offer. The package.json description reads "Peloton workouts as HomeKit sensors for Homebridge automations: run scenes when a workout starts or ends." The banner tagline reads "HomeKit sensors driven by Peloton workouts: run scenes when a workout starts or ends."; `assets/peloton-banner.png` and `homebridge-ui/public/peloton-banner.png` are regenerated (1280 × 320) on the same layout, colours and type, and `bannerAlt` in copy.js, the README banner alt text and the banner line in design/README.md match. The Daily check-in caption keeps "heart-rate zones", since the check-in does refresh them.
+- SPEC section 14 records the Homebridge verification (October 18, 2026, homebridge/plugins#1239): the Verified by Homebridge badge first in the README badge row, the icon in Homebridge's central plugin list, and a standing rule that the verification requirements stay met in every release. CLAUDE.md carries the same rule.
+- Version 1.0.2 in package.json and the version literals in the tests and the bug report form. SPEC sections 5, 13, 14 and 16 and design/README.md carry the 1.0.2 clarifications.
+
 ## 1.0.1 (2026-09-17)
 
 A copy and asset release. The settings page intro matches the README and the 1.0.0 release notes: Heart-rate zone triggers are not offered, so the page no longer says they are. No code changes.

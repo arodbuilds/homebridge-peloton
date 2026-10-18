@@ -1,4 +1,4 @@
-<img src="assets/peloton-banner.png" alt="Peloton: HomeKit sensors driven by Peloton workouts" width="100%">
+<img src="assets/peloton-banner.png" alt="Peloton. HomeKit sensors driven by Peloton workouts: run scenes when a workout starts or ends." width="100%">
 
 [![verified-by-homebridge](https://img.shields.io/badge/_-verified-blueviolet?color=%23491F59&style=flat&logoColor=%23FFFFFF&logo=homebridge)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 [![npm version](https://img.shields.io/npm/v/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
@@ -177,7 +177,7 @@ The network is always mocked in tests. Fixtures live under `fixtures/`, sanitise
 
 ### Auth probe
 
-The probe runs the headless sign-in on its own, without Homebridge, which is the first thing to try when sign-in stops working. Build first, then run from a directory where a token file may be written:
+The probe is not part of the npm package and runs only from a clone of this repository. It runs the headless sign-in on its own, without Homebridge, which is the first thing to try when sign-in stops working. Build first, then run from a directory where a token file may be written:
 
 ```shell
 npm run build
