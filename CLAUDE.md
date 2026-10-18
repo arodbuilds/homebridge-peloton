@@ -20,6 +20,8 @@ Working rules for homebridge-peloton. Read SPEC.md in full before changing anyth
 - Never log or persist tokens, passwords, emails, or response bodies. Log lines print an error stage and HTTP status only.
 - Every PR updates SPEC.md, README.md, and CHANGELOG.md when its scope touches them.
 - Lint, build, and test must be clean before a PR is opened.
+- Verified by Homebridge on October 18, 2026 (homebridge/plugins#1239). Verification requirements stay met in every release: package name homebridge-peloton; keywords homebridge-plugin and supports-hap; dynamic platform; settings GUI (config.schema.json and homebridge-ui) in the package; files written only under the Homebridge storage path; no install scripts; no analytics or tracking; errors caught and logged; a GitHub release with notes for every version.
+- The README's Verified by Homebridge badge stays first in the badge row; never restore the placeholder comment it replaced.
 - Conventional commit messages, one commit per scope item.
 
 ## Layout
