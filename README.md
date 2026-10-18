@@ -1,11 +1,6 @@
 <img src="assets/peloton-banner.png" alt="Peloton: HomeKit sensors driven by Peloton workouts" width="100%">
 
-<!--
-verified-by-homebridge: this plugin has not been through Homebridge verification yet.
-Do not claim it. Once the plugin is verified, replace this comment with the badge:
-[![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
--->
-
+[![verified-by-homebridge](https://img.shields.io/badge/_-verified-blueviolet?color=%23491F59&style=flat&logoColor=%23FFFFFF&logo=homebridge)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 [![npm version](https://img.shields.io/npm/v/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
 [![npm downloads](https://img.shields.io/npm/dt/homebridge-peloton)](https://www.npmjs.com/package/homebridge-peloton)
 [![License](https://img.shields.io/github/license/arodbuilds/homebridge-peloton)](LICENSE)
