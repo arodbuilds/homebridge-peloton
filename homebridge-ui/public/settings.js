@@ -1,9 +1,9 @@
 /**
  * The Settings section (design/README.md, Settings): the intro, then the collapsed Advanced disclosure holding
  * every field in this order: Name, Debug logging, the auto-off minutes, the minutes the fast interval is kept
- * after a workout ends, the Attention needed sensor, the daily check-in time, the read-only Devices seen block,
- * and Restore from backup. Nothing renders on the page grid
- * outside the disclosure.
+ * after a workout ends, the minutes after which an unfinished workout is treated as ended, the Attention needed
+ * sensor, the daily check-in time, the read-only Devices seen block, and Restore from backup. Nothing renders on
+ * the page grid outside the disclosure.
  */
 
 import { toastSuccess } from './api.js';
@@ -19,6 +19,7 @@ export function advancedTouched(config) {
     || config.debug !== DEFAULTS.debug
     || a.fastSwitchAutoOffMinutes !== DEFAULTS.fastSwitchAutoOffMinutes
     || a.keepFastAfterEndMinutes !== DEFAULTS.keepFastAfterEndMinutes
+    || a.openWorkoutLimitMinutes !== DEFAULTS.openWorkoutLimitMinutes
     || a.attentionSensor !== DEFAULTS.attentionSensor
     || a.dailyCheckIn !== DEFAULTS.dailyCheckIn;
 }
@@ -149,6 +150,15 @@ export function renderSettings(app, container) {
       c.advanced.keepFastAfterEndMinutes = value;
       app.changed();
     }, { path: 'advanced.keepFastAfterEndMinutes', min: 0, help: SETTINGS.keepFastHelp })),
+    gridCell(6, numberField(SETTINGS.openLimit, c.advanced.openWorkoutLimitMinutes, (value) => {
+      c.advanced.openWorkoutLimitMinutes = value;
+      app.changed();
+    }, {
+      path: 'advanced.openWorkoutLimitMinutes',
+      min: DEFAULTS.openWorkoutLimitMinutesMin,
+      max: DEFAULTS.openWorkoutLimitMinutesMax,
+      help: SETTINGS.openLimitHelp,
+    })),
     gridCell(6, checkboxField(SETTINGS.attention, c.advanced.attentionSensor, (value) => {
       c.advanced.attentionSensor = value;
       app.changed();

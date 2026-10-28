@@ -324,6 +324,25 @@ describe('startup sign-in', () => {
     assert.deepEqual(platform.activePoller.activeAccountIds, []);
   });
 
+  it('logs a rate limited startup sign-in once and skips the remaining startup sign-ins for this run', async () => {
+    const fetch = createRoutedFetch();
+    fetch.route('/workouts', apiResponse('workouts-empty'));
+    const login = fakeLogin({ 'owner@example.com': new AuthError('authorize', 429, undefined, { rateLimited: true, retryAfter: 60 }) });
+    const { log } = await launch({
+      fetch,
+      login,
+      config: { ...SIGN_IN_CONFIG, accounts: [SIGN_IN_CONFIG.accounts[0], SIGN_IN_CONFIG.accounts[2]] },
+      records: {},
+    });
+    assert.deepEqual(login.calls.map((call) => call.email), ['owner@example.com'], 'one attempt, no loop and no second account');
+    assert.deepEqual(log.lines.info, [
+      'Alex: sign-in rate limited by Peloton at stage authorize, HTTP 429; use the settings page to connect',
+      'a3: sign-in skipped while Peloton is rate limiting; use the settings page to connect',
+      'Alex: not connected, not polling',
+      'a3: not connected, not polling',
+    ]);
+  });
+
   it('never re-logs in an account whose tokens are stored', async () => {
     const fetch = createRoutedFetch();
     fetch.route('/workouts', apiResponse('workouts-empty'));

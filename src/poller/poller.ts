@@ -14,7 +14,10 @@ import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerC
 import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
 import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
-import { HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, workoutMatches, zoneBounds, zoneForSample } from './rules.js';
+import {
+  HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, isOpenTooLong, openWorkoutDeadline, openWorkoutLimitMs, workoutMatches,
+  zoneBounds, zoneForSample,
+} from './rules.js';
 
 export type PollerState = 'standby' | 'scanning' | 'locked' | 'released';
 
@@ -143,6 +146,10 @@ type Listener<T> = (event: T) => void;
 export const BACKOFF_AFTER_FAILURES = 3;
 /** Backoff never stretches a base interval to more than this many seconds (or the base when longer). */
 export const BACKOFF_CAP_SECONDS = 60;
+/** The first household pause after a rate limited response without Retry-After, in seconds (SPEC section 8.2). */
+export const RATE_LIMIT_FIRST_WAIT_SECONDS = 120;
+/** No household pause for a rate limit lasts longer than this many seconds. */
+export const RATE_LIMIT_MAX_WAIT_SECONDS = 30 * 60;
 /** Samples are taken every this many seconds of the workout. */
 export const GRAPH_EVERY_N = 5;
 /** A sample counts as stale once this many polls pass without a new one. */
@@ -187,6 +194,25 @@ export function backoffInterval(baseSeconds: number, failures: number): number {
   }
   const cap = Math.max(baseSeconds, BACKOFF_CAP_SECONDS);
   return Math.min(baseSeconds * 2 ** (failures - BACKOFF_AFTER_FAILURES + 1), cap);
+}
+
+/**
+ * How long the household pauses after a rate limited poll or token refresh (SPEC section 8.2), in
+ * seconds: Retry-After when the response carried one, else 2 minutes doubled for every consecutive
+ * rate limited poll before this one (streak counts this one, from 1). Never shorter than the interval
+ * the household is on, never longer than 30 minutes.
+ */
+export function rateLimitWait(retryAfterSeconds: number | undefined, streak: number, intervalSeconds: number): number {
+  const base = retryAfterSeconds ?? RATE_LIMIT_FIRST_WAIT_SECONDS * 2 ** Math.max(0, Math.min(streak - 1, 16));
+  return Math.min(RATE_LIMIT_MAX_WAIT_SECONDS, Math.max(base, intervalSeconds));
+}
+
+/** The rate limit an error carries: an API call or a token refresh that Peloton or its CDN rate limited. */
+function rateLimitOf(error: unknown): { status: number | undefined; retryAfter: number | undefined } | undefined {
+  if ((error instanceof ApiError || error instanceof AuthError) && error.rateLimited) {
+    return { status: error.status, retryAfter: error.retryAfter };
+  }
+  return undefined;
 }
 
 interface AccountRuntime {
@@ -241,6 +267,13 @@ export class Poller {
   private switchIsOn = false;
   private lockedAccountId: string | undefined;
   private lockedWorkoutId: string | undefined;
+  /**
+   * The locked workout's open limit (SPEC section 8.2): the time after which it is treated as ended
+   * even while Peloton still reports it IN_PROGRESS, undefined when it has no start time, and the
+   * limit itself in milliseconds for the log line.
+   */
+  private lockedDeadline: number | undefined;
+  private lockedLimitMs = 0;
   private releasedAccountId: string | undefined;
   private generation = 0;
   private started = false;
@@ -252,6 +285,14 @@ export class Poller {
   /** The end of the fast interval kept after the last workout end (SPEC section 8.4), and its timer. */
   private fastUntil: number | undefined;
   private keepFastTimer: unknown;
+  /**
+   * The household pause after a rate limited response (SPEC section 8.2): every account shares one IP
+   * address, so no account is polled until pauseUntil. rateLimitStreak counts the consecutive rate
+   * limited polls that started a pause, for the doubling; a successful poll resets it.
+   */
+  private pauseUntil: number | undefined;
+  private pauseTimer: unknown;
+  private rateLimitStreak = 0;
   /** Every device_type and platform pair already recorded (SPEC section 8.2), loaded from the store on first use. */
   private seenDevices: Set<string> | undefined;
   private seenDevicesLoading: Promise<Set<string>> | undefined;
@@ -336,6 +377,8 @@ export class Poller {
     this.clearAutoOff();
     this.clearKeepFast();
     this.fastUntil = undefined;
+    this.clearPause();
+    this.rateLimitStreak = 0;
     if (this.checkInTimer !== undefined) {
       this.scheduler.clearTimer(this.checkInTimer);
       this.checkInTimer = undefined;
@@ -379,6 +422,11 @@ export class Poller {
   /** When the fast interval kept after the last workout end runs out, or undefined while none is running. */
   get keepFastUntil(): number | undefined {
     return this.fastUntil !== undefined && this.fastUntil > this.now() ? this.fastUntil : undefined;
+  }
+
+  /** When the household pause after a rate limited response ends, or undefined while polling is not paused. */
+  get pausedUntil(): number | undefined {
+    return this.pauseUntil;
   }
 
   /** When the auto-off timer will fire, or undefined while the switch is off. */
@@ -501,6 +549,11 @@ export class Poller {
    * Failures follow 8.2: invalid_grant drops the account, anything else is skipped until tomorrow.
    */
   private async runCheckIn(): Promise<void> {
+    if (this.pauseUntil !== undefined) {
+      // Peloton is rate limiting this network; the check-in waits for tomorrow rather than add to it.
+      this.log.debug('Daily check-in skipped while polling is paused for a rate limit');
+      return;
+    }
     let count = 0;
     for (const runtime of [...this.accounts.values()]) {
       const { account } = runtime;
@@ -518,8 +571,13 @@ export class Poller {
         await this.store.save(account.id, updated);
         count += 1;
       } catch (error) {
+        const rateLimit = rateLimitOf(error);
         if (error instanceof AuthError && error.code === 'invalid_grant') {
           this.dropAccount(runtime, error.stage, error.status);
+        } else if (rateLimit !== undefined) {
+          // The rest of the household shares the IP address: pause and leave them for tomorrow.
+          this.startPause(rateLimit.status, rateLimit.retryAfter);
+          break;
         } else {
           const status = error instanceof ApiError ? `HTTP ${error.status}` : error instanceof AuthError ? `stage ${error.stage}` : 'network';
           this.log.debug(`${account.displayName}: daily check-in failed (${status})`);
@@ -541,6 +599,73 @@ export class Poller {
   }
 
   /* ----------------------------------------------------------------------------------------------
+   * Household pause after a rate limit (SPEC section 8.2)
+   * -------------------------------------------------------------------------------------------- */
+
+  /**
+   * Pauses polling for every account after a rate limited poll or token refresh. A rate limited
+   * answer while a pause is already running (another poll of the same cycle) changes nothing, so
+   * each pause logs one warn line and doubles the wait once.
+   */
+  private startPause(status: number | undefined, retryAfter: number | undefined): void {
+    if (this.pauseUntil !== undefined) {
+      return;
+    }
+    this.rateLimitStreak += 1;
+    const seconds = rateLimitWait(retryAfter, this.rateLimitStreak, this.currentIntervalSeconds());
+    this.pauseUntil = this.now() + seconds * 1000;
+    // Stale list polls already scheduled or in flight must not reschedule anything.
+    this.generation += 1;
+    for (const runtime of this.accounts.values()) {
+      this.clearAccountTimer(runtime);
+    }
+    this.log.warn(`Peloton is rate limiting this network (HTTP ${status ?? 'none'}); pausing polling for every account for ${seconds}s`);
+    const locked = this.currentState === 'locked' && this.lockedAccountId !== undefined ? this.accounts.get(this.lockedAccountId) : undefined;
+    if (locked !== undefined) {
+      // No sample arrives during the pause, so a heart-rate condition is false from now (8.3, stale samples).
+      this.evaluateHrTriggers(locked, 0);
+    }
+    this.pauseTimer = this.scheduler.setTimer(() => {
+      this.pauseTimer = undefined;
+      this.endPause();
+    }, seconds * 1000);
+  }
+
+  /**
+   * Resumes polling where the household stands now: a locked or released account is polled at once
+   * (the open workout limit is checked first, 8.2), otherwise the staggered schedule restarts with
+   * the first account at once, at the interval the switch now calls for.
+   */
+  private endPause(): void {
+    this.pauseUntil = undefined;
+    if (!this.started) {
+      return;
+    }
+    if (this.currentState === 'locked' || this.currentState === 'released') {
+      const runtime = this.lockedRuntime();
+      if (runtime !== undefined) {
+        this.clearAccountTimer(runtime);
+        this.track(this.runPoll(runtime, this.currentState === 'locked' ? 'locked' : 'released'));
+        return;
+      }
+    }
+    this.scheduleAll(true);
+  }
+
+  private clearPause(): void {
+    if (this.pauseTimer !== undefined) {
+      this.scheduler.clearTimer(this.pauseTimer);
+      this.pauseTimer = undefined;
+    }
+    this.pauseUntil = undefined;
+  }
+
+  /** The interval the household is polled at now, in seconds: fast while a workout is followed, else the list interval. */
+  private currentIntervalSeconds(): number {
+    return this.currentState === 'locked' || this.currentState === 'released' ? this.config.polling.fastInterval : this.listInterval();
+  }
+
+  /* ----------------------------------------------------------------------------------------------
    * State and scheduling
    * -------------------------------------------------------------------------------------------- */
 
@@ -559,6 +684,13 @@ export class Poller {
 
   private applySwitchChange(): void {
     if (!this.started) {
+      return;
+    }
+    if (this.pauseUntil !== undefined) {
+      // A rate limit pause stands: the switch takes effect when it ends (endPause), with no poll now.
+      if (this.currentState === 'standby' || this.currentState === 'scanning') {
+        this.setState(this.switchIsOn ? 'scanning' : 'standby');
+      }
       return;
     }
     if (this.currentState === 'locked' || this.currentState === 'released') {
@@ -599,7 +731,8 @@ export class Poller {
     for (const runtime of runtimes) {
       this.clearAccountTimer(runtime);
     }
-    if (interval <= 0 || runtimes.length === 0) {
+    if (interval <= 0 || runtimes.length === 0 || this.pauseUntil !== undefined) {
+      // Nothing to poll, or a rate limit pause stands; endPause restarts the schedule.
       return;
     }
     const step = (interval * 1000) / runtimes.length;
@@ -614,7 +747,7 @@ export class Poller {
 
   /** Schedules one account's next poll after the interval, allowing for backoff. */
   private scheduleNext(runtime: AccountRuntime, kind: 'list' | 'locked' | 'released', generation: number): void {
-    if (generation !== this.generation || !this.accounts.has(runtime.account.id)) {
+    if (generation !== this.generation || !this.accounts.has(runtime.account.id) || this.pauseUntil !== undefined) {
       return;
     }
     const base = kind === 'list' ? this.listInterval() : this.config.polling.fastInterval;
@@ -650,11 +783,19 @@ export class Poller {
    * kind locked reads the locked workout by id. Failures keep the last known state and back off.
    */
   private async runPoll(runtime: AccountRuntime, kind: 'list' | 'locked' | 'released', generation = this.generation): Promise<void> {
-    if (runtime.polling || !this.accounts.has(runtime.account.id)) {
+    if (runtime.polling || !this.accounts.has(runtime.account.id) || this.pauseUntil !== undefined) {
       return;
     }
     if (kind === 'list' && (this.currentState === 'locked' || generation !== this.generation)) {
       // A stale list poll: the household locked on or the schedule changed while this timer waited.
+      return;
+    }
+    if (kind === 'locked' && this.lockedOpenTooLong(runtime)) {
+      // Checked on every locked tick before the fetch, so neither a workout Peloton leaves IN_PROGRESS
+      // nor a network outage can keep a sensor on (SPEC section 8.2). The end is processed like any
+      // other and the released state takes over below; this tick makes no request.
+      this.endWorkout(runtime, 'limit');
+      this.scheduleAfterPoll(runtime, kind, generation);
       return;
     }
     runtime.polling = true;
@@ -666,6 +807,7 @@ export class Poller {
         await this.pollList(runtime);
       }
       runtime.failures = 0;
+      this.rateLimitStreak = 0;
       await this.recordChecked(runtime);
     } catch (error) {
       dropped = this.handlePollError(runtime, error) === 'dropped';
@@ -675,8 +817,14 @@ export class Poller {
     if (dropped) {
       return;
     }
-    // A poll may have changed the state; schedule the next poll for where we are now. The locked or
-    // released account keeps its own chain; everyone else follows the household schedule.
+    this.scheduleAfterPoll(runtime, kind, generation);
+  }
+
+  /**
+   * A poll may have changed the state; schedules the next poll for where we are now. The locked or
+   * released account keeps its own chain; everyone else follows the household schedule.
+   */
+  private scheduleAfterPoll(runtime: AccountRuntime, kind: 'list' | 'locked' | 'released', generation: number): void {
     if (this.currentState === 'locked' && this.lockedAccountId === runtime.account.id) {
       this.scheduleNext(runtime, 'locked', this.generation);
     } else if (this.currentState === 'released' && this.releasedAccountId === runtime.account.id) {
@@ -701,7 +849,27 @@ export class Poller {
       return;
     }
     if (workout.status === 'IN_PROGRESS' && workout.id !== runtime.lastSeenActiveId) {
+      if (isOpenTooLong(workout, this.now(), this.config.advanced.openWorkoutLimitMinutes)) {
+        // Left IN_PROGRESS past its limit (SPEC section 8.2): an old workout nobody finished, not a start.
+        this.log.debug(`${account.displayName}: workout ${workout.id} has been open past its limit, not a start`);
+        return;
+      }
       this.startWorkout(runtime, workout);
+    }
+  }
+
+  /** True when the followed workout has been open past its limit (SPEC section 8.2). */
+  private lockedOpenTooLong(runtime: AccountRuntime): boolean {
+    return this.currentState === 'locked' && this.lockedAccountId === runtime.account.id
+      && this.lockedDeadline !== undefined && this.now() > this.lockedDeadline;
+  }
+
+  /** Sets the followed workout's open limit; a workout without a start time keeps the last known one. */
+  private setLockedLimit(workout: Workout): void {
+    const deadline = openWorkoutDeadline(workout, this.config.advanced.openWorkoutLimitMinutes);
+    if (deadline !== undefined) {
+      this.lockedDeadline = deadline;
+      this.lockedLimitMs = openWorkoutLimitMs(workout, this.config.advanced.openWorkoutLimitMinutes);
     }
   }
 
@@ -712,6 +880,7 @@ export class Poller {
     this.debugWorkout(runtime, workout);
     await this.recordDeviceSeen(runtime, workout);
     runtime.latestWorkout = workout;
+    this.setLockedLimit(workout);
     if (workout.status === 'COMPLETE') {
       this.endWorkout(runtime);
       return;
@@ -805,11 +974,17 @@ export class Poller {
     return this.seenDevicesLoading;
   }
 
-  private handlePollError(runtime: AccountRuntime, error: unknown): 'failed' | 'dropped' {
+  private handlePollError(runtime: AccountRuntime, error: unknown): 'failed' | 'dropped' | 'paused' {
     const { account } = runtime;
     if (error instanceof AuthError && error.code === 'invalid_grant') {
       this.dropAccount(runtime, error.stage, error.status);
       return 'dropped';
+    }
+    const rateLimit = rateLimitOf(error);
+    if (rateLimit !== undefined) {
+      // Not a per-account failure: polling harder from the same IP address makes it worse (8.2).
+      this.startPause(rateLimit.status, rateLimit.retryAfter);
+      return 'paused';
     }
     runtime.failures += 1;
     if (this.hrTriggersFor(runtime).length > 0 && this.currentState === 'locked' && this.lockedAccountId === account.id) {
@@ -871,6 +1046,9 @@ export class Poller {
     runtime.noHeartRateLogged = false;
     this.lockedAccountId = account.id;
     this.lockedWorkoutId = workout.id;
+    this.lockedDeadline = undefined;
+    this.lockedLimitMs = 0;
+    this.setLockedLimit(workout);
     this.releasedAccountId = undefined;
     for (const other of this.accounts.values()) {
       if (other !== runtime) {
@@ -897,18 +1075,30 @@ export class Poller {
     }
   }
 
-  private endWorkout(runtime: AccountRuntime): void {
+  /**
+   * Ends the followed workout: Peloton reported it COMPLETE, the account dropped out of polling, or it
+   * stayed open past its limit (SPEC section 8.2). Every reason is processed the same way; only the log
+   * line differs. The id stays the last seen active id, so the list never locks on it again.
+   */
+  private endWorkout(runtime: AccountRuntime, reason: 'complete' | 'limit' = 'complete'): void {
     const { account } = runtime;
     const workoutId = this.lockedWorkoutId as string;
+    const limitMinutes = Math.round(this.lockedLimitMs / 60_000);
     this.lockedAccountId = undefined;
     this.lockedWorkoutId = undefined;
+    this.lockedDeadline = undefined;
+    this.lockedLimitMs = 0;
     this.releasedAccountId = account.id;
     this.lastWorkoutEndAt = this.now();
     if (this.switchIsOn) {
       this.armAutoOff();
     }
     this.armKeepFast();
-    this.log.info(`${account.displayName}: workout ended`);
+    if (reason === 'limit') {
+      this.log.info(`${account.displayName}: workout still open after ${limitMinutes} minutes, treated as ended`);
+    } else {
+      this.log.info(`${account.displayName}: workout ended`);
+    }
     this.emit('workoutEnded', { accountId: account.id, userId: account.userId, displayName: account.displayName, workoutId });
     for (const trigger of this.triggers) {
       if (trigger.trigger.type === 'workout') {

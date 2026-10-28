@@ -5,21 +5,30 @@
  * Returned objects contain only the fields SPEC lists.
  */
 
+import { type RateLimitInfo, rateLimitInfo } from '../rate-limit.js';
+
 export const PELOTON_API_BASE = 'https://api.onepeloton.com';
 
 /**
  * Non-2xx response from the Peloton API. status 401 tells the caller to refresh and retry.
- * Never carries the response body.
+ * rateLimited is true for HTTP 429 or the CDN's rate limit page (SPEC section 8.2), with retryAfter
+ * the response's Retry-After in seconds when it carried a usable one. Never carries the response body.
  */
 export class ApiError extends Error {
   public readonly status: number;
   public readonly path: string;
+  public readonly rateLimited: boolean;
+  public readonly retryAfter?: number;
 
-  constructor(status: number, path: string) {
-    super(`Peloton API ${path} returned HTTP ${status}`);
+  constructor(status: number, path: string, rateLimit: RateLimitInfo = { rateLimited: false }) {
+    super(`Peloton API ${path} returned HTTP ${status}${rateLimit.rateLimited ? ' (rate limited)' : ''}`);
     this.name = 'ApiError';
     this.status = status;
     this.path = path;
+    this.rateLimited = rateLimit.rateLimited;
+    if (rateLimit.retryAfter !== undefined) {
+      this.retryAfter = rateLimit.retryAfter;
+    }
   }
 }
 
@@ -309,8 +318,9 @@ async function getJson(path: string, accessToken: string, fetchImpl: FetchImpl):
     },
   });
   if (response.status < 200 || response.status >= 300) {
-    await response.text().catch(() => undefined);
-    throw new ApiError(response.status, path.split('?')[0] ?? path);
+    // The body is read only to tell the CDN's rate limit page from other failures; it is never kept.
+    const text = await response.text().catch(() => '');
+    throw new ApiError(response.status, path.split('?')[0] ?? path, rateLimitInfo(response.status, text, response.headers.get('retry-after'), Date.now()));
   }
   const body: unknown = await response.json();
   return obj(body);

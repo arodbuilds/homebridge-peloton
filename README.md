@@ -34,7 +34,7 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 ## Requirements
 
 - Homebridge 1.8 or 2.x, with the Homebridge UI for the settings page.
-- Node 20 or later.
+- Node 20 or later. Every release is tested on Node 20, 22, 24, and 26.
 - A Peloton membership. Every profile you want to watch signs in with its own Peloton account.
 
 ## Install
@@ -92,6 +92,7 @@ Settings holds one Advanced disclosure, collapsed until something inside it is c
 - Debug logging: logs every poll and the workout data it returns; sign-in details and session tokens are never logged.
 - Fast polling switch turns off after: the auto-off period in minutes.
 - Keep fast polling after a workout ends: how many minutes the plugin keeps the fast interval after any workout ends, even with the switch off, so a second workout is caught quickly. 5 by default, 0 turns it off.
+- Treat an unfinished workout as ended after: a workout Peloton still shows in progress long after anyone is riding (someone walked away without finishing) would otherwise keep your sensor on. A class is treated as ended 20 minutes after its class length; this setting covers workouts without a class length, such as Just Ride or Just Run. 180 minutes by default, from 30 to 720.
 - Attention needed sensor: an occupancy sensor that is on while any account needs to be reconnected, for an automation that sends you a notification.
 - Daily check-in time: once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out.
 - Devices seen: a read-only list of the device codes the plugin has seen on your membership, each tagged Known or Unknown. An Unknown row has a Copy report button; see [Devices](#devices).
@@ -123,6 +124,8 @@ If Back does not show the callback address, long-press the Back button and pick 
 - **Lock-on.** One workout is followed at a time. Other members' workouts are not polled while a workout is locked, so two riders on one membership should start the second ride after the first has ended, or use one Workout trigger for anyone.
 - **Hold.** A Workout sensor stays on for the keep-on time after the class ends, and a new matching workout during that time keeps it on without a gap. A Heart-rate zone sensor changes only after the zone has held for the hold time, and turns off when the workout ends.
 - **Third-party imports are ignored.** Runs and other activities synced into Peloton from Apple Health, Strava, or Fitbit never start or end a workout, even when they land at the top of your workout list mid-ride.
+- **Unfinished workouts.** A workout Peloton leaves in progress is treated as ended once it has been open 20 minutes longer than its class, or, without a class length, for the minutes set under Advanced (180 by default). This happens even while Peloton cannot be reached, so a sensor never stays on indefinitely, and the same workout is never picked up again.
+- **Rate limits.** Peloton limits how often one network may ask. If it answers that the plugin is asking too often, the plugin pauses polling for every account, since they all share your network: for as long as Peloton asks (at most 30 minutes), or 2 minutes doubling up to 30 when it does not say, and logs one warning per pause. Turning on the fast polling switch during a pause takes effect when the pause ends.
 - **Fast polling after a workout.** After any workout ends the plugin keeps the fast interval for the minutes set under Advanced (5 by default), whatever the switch, then follows the switch again.
 - **Configuration.** The settings page writes the platform block in config.json; the shape and every default are in [SPEC.md](SPEC.md) section 6 and in `config.schema.json`, for anyone who edits by hand.
 
@@ -152,7 +155,7 @@ When the plugin sees a code it does not know it logs one line, "New Peloton devi
 - Profile photos are fetched by the plugin and proxied to the settings page; the page never talks to Peloton's servers itself.
 - The log never contains tokens, passwords, emails, or Peloton's responses. Debug logging prints workout ids and statuses only.
 - The devices seen list keeps only device codes (device type and platform) and the workout type each was first seen on, in the owner's account file. No workout ids, titles, dates, or account details are kept for it.
-- To remove everything for an account, click Remove on its card. To remove every stored sign-in, delete the `homebridge-peloton` folder in the Homebridge storage folder.
+- To remove everything for an account, click Remove on its card. The plugin first asks Peloton to end that account's session (it revokes the stored refresh token), then deletes the account file; the file is deleted even if Peloton cannot be reached. To remove every stored sign-in, delete the `homebridge-peloton` folder in the Homebridge storage folder.
 
 ## Troubleshooting
 
@@ -160,12 +163,13 @@ When the plugin sees a code it does not know it logs one line, "New Peloton devi
 - **Accounts with extra verification.** If Peloton asks for a verification code when the plugin signs in, the panel says so and offers Sign in with browser; complete the verification in the browser tab and paste the callback address. Please open an issue if you hit this, since it has not been seen on a household account yet.
 - **"Peloton sign-in did not complete."** Peloton changed something about its login page and the headless sign-in no longer fits it. Use Sign in with browser to keep going, and open an issue with the output of the auth probe (see [Development](#development)); the fix lives in one file.
 - **No heart-rate data.** The log says "no heart-rate data for this workout" once per workout when no heart-rate monitor is paired. The zone sensor stays off for that workout.
+- **"Peloton is rate limiting this network".** Peloton answered that this network is asking too often, so polling pauses for the time in the warning. It resumes on its own. If it happens often, raise the standby interval under Polling or shorten how long the fast polling switch stays on; other Peloton apps or scripts on the same network count against the same limit.
 - **A workout is noticed late.** Without the fast polling automation the plugin polls at the standby interval. Set up the automation, or lower the standby interval under Polling. A second workout soon after the first is caught quickly either way, for the minutes set by Keep fast polling after a workout ends under Advanced.
 - **A trigger with a Device filter never turns on.** The workout may come from hardware or an app the plugin does not know yet. Check Devices seen under Advanced: an Unknown row means the codes are new, and Copy report gives you everything a [device report](https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml) needs. A trigger set to Any device works meanwhile.
 
 ## Development
 
-Node 20 or later. Install with `npm install`, then:
+Node 20 or later (CI runs Node 20, 22, 24, and 26). Install with `npm install`, then:
 
 | Script | What it does |
 | --- | --- |
@@ -184,6 +188,7 @@ npm run build
 node dist/scripts/auth-probe.mjs login you@example.com        # prompts for the password without echo
 node dist/scripts/auth-probe.mjs login you@example.com --dump ./auth-dump
 node dist/scripts/auth-probe.mjs refresh
+node dist/scripts/auth-probe.mjs revoke                        # revokes the stored session, then shows a refresh with it fails
 node dist/scripts/auth-probe.mjs browser                       # prints the sign-in URL, waits for the pasted callback URL
 node dist/scripts/auth-probe.mjs me
 node dist/scripts/auth-probe.mjs workout --keys

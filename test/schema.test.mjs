@@ -18,7 +18,7 @@ const SAMPLE = {
     { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: '8084e81d', zone: 4, holdTime: 20 },
   ],
   polling: { fastSwitch: true, fastSwitchName: 'Peloton fast polling', fastInterval: 10, standbyInterval: 120, calloutDismissed: false },
-  advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
+  advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, openWorkoutLimitMinutes: 180, attentionSensor: false, dailyCheckIn: '03:00' },
   debug: false,
 };
 
@@ -62,6 +62,11 @@ describe('config.schema.json', () => {
     assert.equal(p.advanced.properties.keepFastAfterEndMinutes.default, 5);
     assert.equal(p.advanced.properties.keepFastAfterEndMinutes.minimum, 0);
     assert.equal(p.advanced.properties.keepFastAfterEndMinutes.title, 'Keep fast polling after a workout ends (minutes)');
+    assert.equal(p.advanced.properties.openWorkoutLimitMinutes.default, 180);
+    assert.equal(p.advanced.properties.openWorkoutLimitMinutes.minimum, 30);
+    assert.equal(p.advanced.properties.openWorkoutLimitMinutes.maximum, 720);
+    assert.equal(p.advanced.properties.openWorkoutLimitMinutes.type, 'integer');
+    assert.equal(p.advanced.properties.openWorkoutLimitMinutes.title, 'Treat an unfinished workout as ended after (minutes)');
     assert.equal(p.advanced.properties.attentionSensor.default, false);
     assert.equal(p.advanced.properties.dailyCheckIn.default, '03:00');
     assert.equal(p.triggers.items.properties.holdAfterEnd.default, 90);
@@ -132,6 +137,9 @@ describe('config.schema.json', () => {
     assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, fastSwitchAutoOffMinutes: 0 } }), false);
     assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, keepFastAfterEndMinutes: 0 } }), true);
     assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, keepFastAfterEndMinutes: -1 } }), false);
+    for (const [minutes, valid] of [[30, true], [720, true], [29, false], [721, false], [90.5, false]]) {
+      assert.equal(validate({ ...SAMPLE, advanced: { ...SAMPLE.advanced, openWorkoutLimitMinutes: minutes } }), valid, String(minutes));
+    }
     assert.equal(validate({ ...SAMPLE, accounts: [{ id: 'a 1', email: 'x@example.com' }] }), false);
     assert.equal(validate({ ...SAMPLE, accounts: [{ id: 'a1' }] }), false);
   });

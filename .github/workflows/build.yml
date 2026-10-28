@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20.x, 22.x, 24.x]
+        node-version: [20.x, 22.x, 24.x, 26.x]
 
     steps:
       - uses: actions/checkout@v5
@@ -24,8 +24,9 @@ jobs:
           cache: npm
 
       # The release workflow publishes with npm@latest, so the checks run with it where it supports the Node
-      # under test. npm 12 requires Node 22.22.2 or 24.15 and up and refuses to install on Node 20, so the
-      # Node 20 leg keeps its bundled npm 10; the package suite reads npm pack --json from npm 10 through 12.
+      # under test. npm 12 requires Node 22.22.2, 24.15, or 26.0 and up and refuses to install on Node 20, so
+      # the Node 20 leg keeps its bundled npm 10 while the 22, 24, and 26 legs update; the package suite reads
+      # npm pack --json from npm 10 through 12.
       - name: Update npm to the version the release uses
         if: matrix.node-version != '20.x'
         run: npm install -g npm@latest

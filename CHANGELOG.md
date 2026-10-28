@@ -2,6 +2,23 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.3 (2026-10-28)
+
+A runtime release. A workout Peloton leaves in progress no longer keeps sensors on, a rate limit from Peloton pauses polling for the whole household instead of making it worse, removing an account signs its session out with Peloton, and Node 26 is tested.
+
+### Added
+
+- Open workout limit. A workout Peloton leaves IN_PROGRESS (someone walks away and never finishes) no longer keeps triggers on and the household on fast polling indefinitely. A class is treated as ended 20 minutes after its class length; a workout without a class length (Just Ride, Just Run, free workouts) after the new `advanced.openWorkoutLimitMinutes`, default 180, 30 to 720, under Advanced as "Treat an unfinished workout as ended after (minutes)". The check runs on every locked tick before the request, so a network outage cannot keep a sensor on either; the end is processed like any other (holds, keep-fast window, auto-off re-arm) and logs "{name}: workout still open after {minutes} minutes, treated as ended". The same workout is never locked on again, an IN_PROGRESS workout already past its limit is not a start (also at startup), and a later COMPLETE for it changes nothing.
+- Rate limit handling. A response is rate limited when it is HTTP 429, or any other non-2xx whose body starts with "error code: 1015" (the CDN's rate limit page; the body is read only to classify it). `ApiError` and `AuthError` carry `rateLimited` and `retryAfter` (Retry-After as delta-seconds or an HTTP-date, garbage ignored), from the shared `src/rate-limit.ts`. A rate limited poll or token refresh pauses polling for the whole household, since every account shares one IP address: Retry-After clamped to at least the current interval and at most 30 minutes, else 2 minutes doubling on each consecutive rate limited poll up to 30, reset on the next success. One warn line per pause: "Peloton is rate limiting this network (HTTP {status}); pausing polling for every account for {seconds}s". The fast polling switch takes effect when a pause ends, and the open workout limit is checked first when it does. A rate limited startup sign-in is logged once and the remaining startup sign-ins are skipped for that run; nothing retries in a loop. Other transient failures keep the backoff they had.
+- Revoke on removal. Removing an account on the settings page first revokes its refresh token with Auth0 (`revoke(refreshToken, fetchImpl)` in `src/auth/peloton-auth.ts`: POST `/oauth/revoke` on the Auth0 host with `client_id` and `token` as JSON, no redirects followed, a 10 second timeout), then deletes the account file. Best effort: a failure logs one debug line with stage revoke and the HTTP status, the file is deleted regardless, and Remove never fails because of it. The auth probe gains `revoke`, which revokes the probe's stored token and then shows that a refresh with it fails; the revoke is unverified against Peloton's tenant until it runs on the Pi.
+
+### Changed
+
+- Node 26 support. Homebridge now runs on Node 26, and the build workflow tests Node 20, 22, 24, and 26; the 22, 24, and 26 legs update npm to the version the release uses. `engines.node` stays `>=20` and `engines.homebridge` is unchanged. Nothing in the source or the tests depended on an API Node 26 removed or warns on. The README requirements say Node 20 to 26 is tested.
+- 429 is no longer an ordinary transient failure with the 60 second backoff; it pauses the household as described under Added. Network failures, 5xx and a second 401 keep the backoff.
+- Version 1.0.3 in package.json, package-lock.json, the version literals in the tests and the bug report form. SPEC section 16 (1.0.3 clarifications) and the sections it names, CLAUDE.md, the README and design/README.md carry the changes.
+- Tests: a rate limit suite; rules, config, schema, page model and page tests for the open workout limit; fake clock poller tests for the limit and the household pause; API and auth tests for the rate limit fields and revoke; platform tests for a rate limited startup sign-in; UI server tests for revoke on /remove.
+
 ## 1.0.2 (2026-10-18)
 
 A packaging and copy release, prepared as the plugin was verified by Homebridge (homebridge/plugins#1239). The developer auth probe stays out of the npm package, and nothing in the package description or the banner promises heart-rate zone triggers, which 1.0.x does not offer. No runtime code changes.

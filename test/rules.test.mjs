@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { getLatestWorkout, getPerformanceGraph } from '../dist/api/peloton-api.js';
 import {
   APP_PLATFORMS,
+  CLASS_LIMIT_GRACE_MINUTES,
   HoldAfterEnd,
   HoldState,
   PLATFORM_BY_DEVICE,
@@ -11,7 +12,11 @@ import {
   deviceMatches,
   hrZoneTargets,
   isDetectable,
+  isOpenTooLong,
+  openWorkoutDeadline,
+  openWorkoutLimitMs,
   workoutMatches,
+  workoutStartMs,
   zoneBounds,
   zoneForSample,
 } from '../dist/poller/rules.js';
@@ -67,6 +72,49 @@ describe('isDetectable', () => {
     assert.equal(isDetectable({ ...cycling, status: '' }), false);
     assert.equal(isDetectable(await workoutFixture('workouts-empty')), false);
     assert.equal(isDetectable(undefined), false);
+  });
+});
+
+describe('open workout limit', () => {
+  const MINUTE = 60_000;
+  // The cycling fixture: start_time 1789031000, created_at 1789030990, a 30 minute class (ride.duration 1800).
+  const START = 1_789_031_000_000;
+
+  it('starts from start_time, else created_at, and has no start when neither is a positive number', async () => {
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    assert.equal(workoutStartMs(cycling), START);
+    assert.equal(workoutStartMs({ ...cycling, startTime: null }), 1_789_030_990_000);
+    assert.equal(workoutStartMs({ ...cycling, startTime: 0 }), 1_789_030_990_000);
+    assert.equal(workoutStartMs({ ...cycling, startTime: null, createdAt: null }), undefined);
+    assert.equal(workoutStartMs({ ...cycling, startTime: -5, createdAt: Number.NaN }), undefined);
+  });
+
+  it('gives a class its length plus 20 minutes and a workout without a class length the configured minutes', async () => {
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    assert.equal(CLASS_LIMIT_GRACE_MINUTES, 20);
+    assert.equal(openWorkoutLimitMs(cycling, 180), 50 * MINUTE, '30 minute class plus 20');
+    const strength = await workoutFixture('workout-in-progress-strength');
+    assert.equal(openWorkoutLimitMs(strength, 180), 40 * MINUTE, '20 minute class plus 20, whatever the setting');
+    assert.equal(openWorkoutLimitMs({ ride: null }, 180), 180 * MINUTE, 'Just Ride, no ride object');
+    assert.equal(openWorkoutLimitMs({ ride: { id: 'r', title: 'Just Run', duration: null } }, 90), 90 * MINUTE, 'no planned length');
+    assert.equal(openWorkoutLimitMs({ ride: { id: 'r', title: 'Free ride', duration: 0 } }, 30), 30 * MINUTE, 'a zero length is no class length');
+  });
+
+  it('is open too long only once now passes start plus the limit, and never without a start', async () => {
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    const deadline = START + 50 * MINUTE;
+    assert.equal(openWorkoutDeadline(cycling, 180), deadline);
+    assert.equal(isOpenTooLong(cycling, START, 180), false);
+    assert.equal(isOpenTooLong(cycling, deadline - 1, 180), false);
+    assert.equal(isOpenTooLong(cycling, deadline, 180), false, 'at the deadline itself the workout is still open');
+    assert.equal(isOpenTooLong(cycling, deadline + 1, 180), true);
+    const justRide = { ...cycling, ride: null };
+    assert.equal(isOpenTooLong(justRide, START + 180 * MINUTE, 180), false);
+    assert.equal(isOpenTooLong(justRide, START + 180 * MINUTE + 1, 180), true);
+    assert.equal(isOpenTooLong(justRide, START + 31 * MINUTE, 30), true);
+    const noTimes = { ...cycling, startTime: null, createdAt: null };
+    assert.equal(openWorkoutDeadline(noTimes, 180), undefined);
+    assert.equal(isOpenTooLong(noTimes, START + 365 * 24 * 60 * MINUTE, 180), false);
   });
 });
 

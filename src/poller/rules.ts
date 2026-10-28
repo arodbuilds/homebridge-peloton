@@ -1,6 +1,6 @@
 /**
- * Pure trigger rules (SPEC section 8.3): workout detectability and matching, zone bounds and zone
- * from a sample, and the two hold helpers. Nothing here touches the network, the store, or timers;
+ * Pure trigger rules (SPEC sections 8.2 and 8.3): workout detectability and matching, the open
+ * workout limit, zone bounds and zone from a sample, and the two hold helpers. Nothing here touches the network, the store, or timers;
  * timing comes from an injected clock.
  */
 
@@ -39,6 +39,51 @@ export function isDetectable(workout: Workout | null | undefined): workout is Wo
     return false;
   }
   return workout.status === 'IN_PROGRESS' || workout.status === 'COMPLETE';
+}
+
+/** A class counts as open too long this many minutes after its planned length (SPEC section 8.2). */
+export const CLASS_LIMIT_GRACE_MINUTES = 20;
+
+/**
+ * When the workout started, in epoch milliseconds: start_time, else created_at. undefined when neither is
+ * a positive number, and such a workout is never open too long.
+ */
+export function workoutStartMs(workout: Pick<Workout, 'startTime' | 'createdAt'>): number | undefined {
+  for (const seconds of [workout.startTime, workout.createdAt]) {
+    if (typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * How long a workout may stay IN_PROGRESS before it counts as open too long (SPEC section 8.2), in
+ * milliseconds: a class with a planned length (ride.duration above 0 seconds) gets that length plus
+ * CLASS_LIMIT_GRACE_MINUTES; a workout without one (Just Ride, Just Run, a free workout) gets
+ * noClassLimitMinutes, advanced.openWorkoutLimitMinutes.
+ */
+export function openWorkoutLimitMs(workout: Pick<Workout, 'ride'>, noClassLimitMinutes: number): number {
+  const duration = workout.ride?.duration;
+  if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
+    return duration * 1000 + CLASS_LIMIT_GRACE_MINUTES * 60_000;
+  }
+  return noClassLimitMinutes * 60_000;
+}
+
+/** The time after which the workout counts as open too long, in epoch milliseconds; undefined when it has no start. */
+export function openWorkoutDeadline(workout: Pick<Workout, 'startTime' | 'createdAt' | 'ride'>, noClassLimitMinutes: number): number | undefined {
+  const start = workoutStartMs(workout);
+  return start === undefined ? undefined : start + openWorkoutLimitMs(workout, noClassLimitMinutes);
+}
+
+/**
+ * True once now has passed the workout's start plus its limit. At the deadline itself the workout is
+ * still open; a workout with no start time never counts as open too long.
+ */
+export function isOpenTooLong(workout: Pick<Workout, 'startTime' | 'createdAt' | 'ride'>, now: number, noClassLimitMinutes: number): boolean {
+  const deadline = openWorkoutDeadline(workout, noClassLimitMinutes);
+  return deadline !== undefined && now > deadline;
 }
 
 /**

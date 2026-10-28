@@ -250,6 +250,14 @@
             "minimum": 0,
             "default": 5
           },
+          "openWorkoutLimitMinutes": {
+            "title": "Treat an unfinished workout as ended after (minutes)",
+            "description": "A class is treated as ended 20 minutes after its class length if Peloton still shows it in progress. This applies to workouts without a class length, such as Just Ride or Just Run, so one left unfinished cannot keep a sensor on.",
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 720,
+            "default": 180
+          },
           "attentionSensor": {
             "title": "Attention needed sensor",
             "description": "Create an occupancy sensor that turns on when any account needs to be reconnected. Use it in an automation to get a notification.",

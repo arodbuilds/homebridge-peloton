@@ -17,6 +17,7 @@ import {
   parseLoginPageConfig,
   redactFormValues,
   refresh,
+  revoke,
 } from '../dist/auth/peloton-auth.js';
 import { createFakeFetch, formBody, jsonBody } from './helpers/fake-fetch.mjs';
 import { authFixture, htmlResponse, jsonResponse, redirectResponse } from './helpers/fixtures.mjs';
@@ -474,7 +475,18 @@ describe('login', () => {
       authFixture('login-page'),
       jsonResponse(429, { error: 'too_many_requests', error_description: 'Slow down' }),
     ]);
-    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 429);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 429);
+    assert.equal(error.rateLimited, true, 'a rate limited sign-in says so, so the platform does not try again');
+  });
+
+  it('marks a rate limited login page (the CDN page) as rate limited at stage authorize', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      { status: 403, headers: { 'content-type': 'text/plain', 'retry-after': '600' }, body: 'error code: 1015' },
+    ]);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 403);
+    assert.equal(error.rateLimited, true);
+    assert.equal(error.retryAfter, 600);
   });
 
   it('maps a verification page after the credentials POST to verification_required', async () => {
@@ -641,10 +653,74 @@ describe('refresh', () => {
     assert.equal(error.code, undefined);
   });
 
+  it('marks a rate limited refresh with its Retry-After, and an ordinary failure as not rate limited', async () => {
+    const fetchImpl = createFakeFetch([
+      { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '45' }, body: '{"error":"too_many_requests"}' },
+      { status: 403, headers: { 'content-type': 'text/plain' }, body: 'error code: 1015' },
+      htmlResponse(503, 'down'),
+      authFixture('token-invalid-grant'),
+    ]);
+    const limited = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 429, 'too_many_requests');
+    assert.equal(limited.rateLimited, true);
+    assert.equal(limited.retryAfter, 45);
+    const cdn = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 403);
+    assert.equal(cdn.rateLimited, true);
+    assert.equal(cdn.retryAfter, undefined);
+    assert.equal(cdn.code, undefined, 'never invalid_grant, so the session is kept');
+    assert.equal((await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 503)).rateLimited, false);
+    assert.equal((await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 403, 'invalid_grant')).rateLimited, false);
+  });
+
   it('maps a network failure to stage refresh without a status', async () => {
     const fetchImpl = createFakeFetch([new Error('ENOTFOUND')]);
     const error = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh');
     assert.equal(error.status, undefined);
+  });
+});
+
+describe('revoke', () => {
+  it('posts client_id and the token as JSON to /oauth/revoke on the Auth0 host, without following redirects, with a timeout', async () => {
+    let init;
+    const fetchImpl = createFakeFetch([(request) => {
+      init = request;
+      return { status: 200, headers: {}, body: '' };
+    }]);
+    const seen = [];
+    await revoke('redacted-refresh', async (url, options) => {
+      seen.push(options.signal);
+      return fetchImpl(url, options);
+    });
+    assert.equal(fetchImpl.requests.length, 1);
+    assert.equal(init.url, `${PELOTON_AUTH.tenantUrl}/oauth/revoke`);
+    assert.equal(PELOTON_AUTH.revokePath, '/oauth/revoke');
+    assert.equal(init.method, 'POST');
+    assert.equal(init.headers['content-type'], 'application/json');
+    assert.equal(init.redirect, 'manual');
+    assert.deepEqual(jsonBody(init), { client_id: PELOTON_AUTH.clientId, token: 'redacted-refresh' });
+    assert.ok(seen[0] instanceof globalThis.AbortSignal, 'the request carries a timeout signal');
+    assert.equal(PELOTON_AUTH.revokeTimeoutMs, 10_000);
+  });
+
+  it('maps a non-2xx, a redirect, a network failure and the timeout to stage revoke, never with the token', async () => {
+    const fetchImpl = createFakeFetch([
+      jsonResponse(400, { error: 'invalid_request', error_description: 'redacted-refresh is bad' }),
+      redirectResponse('https://auth.onepeloton.com/somewhere'),
+      new TypeError('fetch failed'),
+      new globalThis.DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+    ]);
+    const bad = await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke', 400);
+    assert.doesNotMatch(bad.message, /redacted-refresh/);
+    await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke', 302);
+    assert.equal(fetchImpl.requests.length, 2, 'the redirect is not followed');
+    assert.equal((await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke')).status, undefined);
+    assert.equal((await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke')).status, undefined);
+  });
+
+  it('gives up after the timeout', async () => {
+    const hang = (url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason));
+    });
+    await expectAuthError(revoke('redacted-refresh', hang, { timeoutMs: 1 }), 'revoke');
   });
 });
 

@@ -4,6 +4,7 @@
  *
  *   node dist/scripts/auth-probe.mjs login <email> [--dump <dir>]   prompts for the password without echo
  *   node dist/scripts/auth-probe.mjs refresh
+ *   node dist/scripts/auth-probe.mjs revoke                           revokes the stored refresh token, then shows a refresh with it fails
  *   node dist/scripts/auth-probe.mjs browser                          prints the URL, waits for the pasted callback URL
  *   node dist/scripts/auth-probe.mjs me
  *   node dist/scripts/auth-probe.mjs workout [--keys]                 --keys also prints the raw field names of the workout
@@ -17,7 +18,7 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 
 import { ApiError, PELOTON_API_BASE, getLatestWorkout, getMe, getPerformanceGraph } from '../api/peloton-api.js';
-import { AuthError, browserFinish, browserStart, login, refresh, type Tokens } from '../auth/peloton-auth.js';
+import { AuthError, browserFinish, browserStart, login, refresh, revoke, type Tokens } from '../auth/peloton-auth.js';
 
 const TOKEN_FILE = './probe-tokens.json';
 const REFRESH_AHEAD_MS = 6 * 60 * 60 * 1000;
@@ -59,6 +60,7 @@ function usage(): never {
     'Usage:',
     '  node dist/scripts/auth-probe.mjs login <email> [--dump <dir>]',
     '  node dist/scripts/auth-probe.mjs refresh',
+    '  node dist/scripts/auth-probe.mjs revoke',
     '  node dist/scripts/auth-probe.mjs browser',
     '  node dist/scripts/auth-probe.mjs me',
     '  node dist/scripts/auth-probe.mjs workout [--keys]',
@@ -194,6 +196,36 @@ async function commandRefresh(): Promise<void> {
   await saveTokens({ ...tokens, userId: stored.userId });
   const rotated = tokens.refreshToken !== stored.refreshToken;
   console.log(`Refresh ok, ${describeExpiry(tokens)}. Refresh token ${rotated ? 'rotated' : 'unchanged'}.`);
+}
+
+/**
+ * Revokes the stored refresh token with Auth0 (what /remove on the settings page does), then tries a
+ * refresh with that same token to show the revoke took effect: Auth0 should answer invalid_grant. The
+ * token file is left as it is, holding a dead session, unless the refresh unexpectedly succeeds.
+ */
+async function commandRevoke(): Promise<void> {
+  const stored = await loadTokens();
+  await revoke(stored.refreshToken);
+  console.log('Revoke accepted (HTTP 2xx).');
+  try {
+    const tokens = await refresh(stored.refreshToken);
+    await saveTokens({ ...tokens, userId: stored.userId });
+    console.log('Refresh with the revoked token still succeeded, so the revoke did not take effect. The rotated tokens were saved.');
+    process.exitCode = 1;
+    return;
+  } catch (error) {
+    if (!(error instanceof AuthError) || error.stage !== 'refresh') {
+      throw error;
+    }
+    const status = error.status === undefined ? 'no HTTP status' : `HTTP ${error.status}`;
+    if (error.code === 'invalid_grant') {
+      console.log(`Refresh with the revoked token failed as expected (stage refresh, ${status}, code invalid_grant).`);
+      console.log(`${TOKEN_FILE} now holds a dead session. Run login or browser again before any other command.`);
+      return;
+    }
+    console.log(`Refresh with the revoked token failed, but not with invalid_grant (stage refresh, ${status}). Inconclusive; try again.`);
+    process.exitCode = 1;
+  }
 }
 
 async function commandBrowser(): Promise<void> {
@@ -389,6 +421,8 @@ async function main(): Promise<void> {
       return commandLogin(args);
     case 'refresh':
       return commandRefresh();
+    case 'revoke':
+      return commandRevoke();
     case 'browser':
       return commandBrowser();
     case 'me':

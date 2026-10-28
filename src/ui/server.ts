@@ -9,7 +9,7 @@
 import { HomebridgePluginUiServer } from '@homebridge/plugin-ui-utils';
 
 import { getLatestWorkout, getMe, getSubscriptions } from '../api/peloton-api.js';
-import { browserFinish, browserStart, login } from '../auth/peloton-auth.js';
+import { browserFinish, browserStart, login, revoke } from '../auth/peloton-auth.js';
 import { PLUGIN_VERSION } from '../settings.js';
 import { AccountStore } from '../store/account-store.js';
 import { UiHandlers } from './handlers.js';
@@ -33,8 +33,11 @@ export class PelotonUiServer extends HomebridgePluginUiServer {
         login: (email, password) => login(email, password),
         browserStart: () => browserStart(),
         browserFinish: (callbackUrl, verifier, state) => browserFinish(callbackUrl, verifier, state),
+        revoke: (refreshToken) => revoke(refreshToken),
       },
       version: PLUGIN_VERSION,
+      // The UI server's only log line: a failed revoke on /remove, stage and HTTP status only.
+      debug: (line) => console.debug(line),
     });
     for (const [path, handler] of Object.entries(handlers.routes())) {
       this.onRequest(path, handler);
