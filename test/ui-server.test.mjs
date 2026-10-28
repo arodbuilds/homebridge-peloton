@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { describe, it } from 'node:test';
 
 import { getLatestWorkout, getMe, getSubscriptions } from '../dist/api/peloton-api.js';
-import { AuthError, PELOTON_AUTH, browserFinish, browserStart } from '../dist/auth/peloton-auth.js';
+import { AuthError, PELOTON_AUTH, browserFinish, browserStart, revoke } from '../dist/auth/peloton-auth.js';
 import {
   AVATAR_CACHE_TTL_MS, BROWSER_SESSION_TTL_MS, HOUSEHOLD_REFRESH_MS, LAST_WORKOUT_CACHE_TTL_MS, UiHandlers, errorResponse, imageTypeOf,
 } from '../dist/ui/handlers.js';
@@ -81,8 +81,10 @@ function harness({ records = { a1: connected(), 'u-member-0002': PROFILE }, logi
     .route('/api/me', apiResponse('me-member'))
     .route('/subscriptions', apiResponse('subscriptions'))
     .route('/oauth/token', authFixture('token-success'))
+    .route('/oauth/revoke', { status: 200, headers: {}, body: '' })
     .route(AVATAR_URL, { status: 200, headers: { 'content-type': 'image/jpeg' }, body: 'JPEGBYTES' });
   const store = createFakeStore(records);
+  const debugLines = [];
   const handlers = new UiHandlers({
     store,
     api: {
@@ -90,12 +92,18 @@ function harness({ records = { a1: connected(), 'u-member-0002': PROFILE }, logi
       getSubscriptions: (userId, token) => getSubscriptions(userId, token, fetch),
       getLatestWorkout: (userId, token) => getLatestWorkout(userId, token, fetch),
     },
-    auth: { login, browserStart, browserFinish: (url, verifier, state) => browserFinish(url, verifier, state, fetch, { now: clock.now }) },
+    auth: {
+      login,
+      browserStart,
+      browserFinish: (url, verifier, state) => browserFinish(url, verifier, state, fetch, { now: clock.now }),
+      revoke: (refreshToken) => revoke(refreshToken, fetch),
+    },
     fetchImpl: fetch,
     now: clock.now,
     version: '1.0.2',
+    debug: (line) => debugLines.push(line),
   });
-  return { handlers, store, fetch, clock, login, routes: handlers.routes() };
+  return { handlers, store, fetch, clock, login, debugLines, routes: handlers.routes() };
 }
 
 function callbackUrl(authorizeUrl, code = 'redacted-code') {
@@ -479,6 +487,47 @@ describe('/remove', () => {
     assert.deepEqual(store.calls.remove, ['a1']);
     assert.deepEqual(await routes['/avatar']({ id: 'a1' }), { ok: true, status: 204 });
     assert.deepEqual((await routes['/status']()).accounts.map((account) => account.id), ['u-member-0002']);
+  });
+
+  it('revokes the refresh token with Auth0 before deleting the file', async () => {
+    const { routes, store, fetch, debugLines } = harness();
+    const removed = [];
+    const remove = store.remove;
+    store.remove = async (id) => {
+      removed.push({ id, revokesBefore: fetch.count('/oauth/revoke') });
+      return remove(id);
+    };
+    assert.deepEqual(await routes['/remove']({ id: 'a1' }), { ok: true });
+    assert.equal(fetch.count('/oauth/revoke'), 1);
+    const request = fetch.calls('/oauth/revoke')[0];
+    assert.equal(request.url, `${PELOTON_AUTH.tenantUrl}/oauth/revoke`);
+    assert.equal(request.method, 'POST');
+    assert.equal(request.headers['content-type'], 'application/json');
+    assert.deepEqual(JSON.parse(request.body), { client_id: PELOTON_AUTH.clientId, token: 'refresh-1' });
+    assert.deepEqual(removed, [{ id: 'a1', revokesBefore: 1 }]);
+    assert.equal(store.records.has('a1'), false);
+    assert.deepEqual(debugLines, []);
+  });
+
+  it('deletes the file and answers ok when the revoke fails, with one debug line carrying the stage and status only', async () => {
+    for (const step of [jsonResponse(503, { error: 'refresh-1 unavailable' }), new TypeError('fetch failed')]) {
+      const { routes, store, fetch, debugLines } = harness();
+      fetch.route('/oauth/revoke', step);
+      assert.deepEqual(await routes['/remove']({ id: 'a1' }), { ok: true });
+      assert.equal(store.records.has('a1'), false);
+      assert.equal(debugLines.length, 1);
+      assert.match(debugLines[0], /^Account removed; session revoke failed at stage revoke, HTTP (503|none)$/);
+      assert.doesNotMatch(debugLines[0], /refresh-1|a1|owner/);
+    }
+  });
+
+  it('sends nothing to Auth0 for an account without a refresh token', async () => {
+    const { routes, store, fetch } = harness({ records: { 'u-member-0002': PROFILE, a2: { state: 'reconnect_needed', userId: 'u-x' } } });
+    assert.deepEqual(await routes['/remove']({ id: 'u-member-0002' }), { ok: true });
+    assert.deepEqual(await routes['/remove']({ id: 'a2' }), { ok: true });
+    assert.deepEqual(await routes['/remove']({ id: 'never-stored' }), { ok: true });
+    assert.equal(fetch.count('/oauth/revoke'), 0);
+    assert.equal(store.records.size, 0);
   });
 });
 

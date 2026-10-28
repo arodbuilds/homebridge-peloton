@@ -6,7 +6,8 @@
  *
  * Flow written from observation of Peloton's Auth0 login on September 10 to 11, 2026. Endpoint and
  * parameter knowledge cross-checked against peloton-to-garmin, the Home Assistant Peloton
- * integration, and @dofek/peloton; no code was taken from them.
+ * integration, and @dofek/peloton; no code was taken from them. revoke (1.0.3) was written from Auth0's
+ * documented refresh token revocation endpoint alone, and rate limit handling from RFC 9110.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -53,6 +54,10 @@ export const PELOTON_AUTH = {
   credentialsPath: '/usernamepassword/login',
   /** Path of the token endpoint on the tenant. */
   tokenPath: '/oauth/token',
+  /** Path of Auth0's refresh token revocation endpoint on the tenant (POST, JSON body client_id and token). */
+  revokePath: '/oauth/revoke',
+  /** How long a revoke may take before it is abandoned, in milliseconds. */
+  revokeTimeoutMs: 10_000,
 } as const;
 
 export type AuthStage =
@@ -64,7 +69,8 @@ export type AuthStage =
   | 'verification_required'
   | 'state_mismatch'
   | 'expired_code'
-  | 'malformed_callback';
+  | 'malformed_callback'
+  | 'revoke';
 
 /**
  * Every auth failure. Carries the stage and, where there was one, the HTTP status and the
@@ -344,6 +350,38 @@ export async function refresh(
     throw new AuthError('refresh', response.status, response.errorCode, response.rateLimit);
   }
   return tokensFromResponse(response.json, now, 'refresh', response.status, refreshToken);
+}
+
+export interface RevokeOptions {
+  /** Abandons the request after this many milliseconds. Defaults to PELOTON_AUTH.revokeTimeoutMs (10 s). */
+  timeoutMs?: number;
+}
+
+/**
+ * Revokes a refresh token with Auth0's documented revocation endpoint: POST {tenant}/oauth/revoke with
+ * a JSON body of client_id and token. Redirects are not followed. Resolves on any 2xx; anything else,
+ * a redirect included, is AuthError stage revoke with the HTTP status, and a network failure or the
+ * timeout is AuthError stage revoke without one. The token is never logged or kept. Callers treat a
+ * revoke as best effort (SPEC section 10, /remove).
+ */
+export async function revoke(refreshToken: string, fetchImpl: FetchImpl = fetch, options: RevokeOptions = {}): Promise<void> {
+  const url = new URL(PELOTON_AUTH.revokePath, PELOTON_AUTH.tenantUrl).toString();
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ client_id: PELOTON_AUTH.clientId, token: refreshToken }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(options.timeoutMs ?? PELOTON_AUTH.revokeTimeoutMs),
+    });
+  } catch {
+    throw new AuthError('revoke');
+  }
+  await response.text().catch(() => undefined);
+  if (response.status < 200 || response.status >= 300) {
+    throw new AuthError('revoke', response.status);
+  }
 }
 
 /**

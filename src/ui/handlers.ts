@@ -30,6 +30,8 @@ export interface UiAuth {
   login: LoginFn;
   browserStart(): BrowserStart;
   browserFinish(callbackUrl: string, verifier: string, state: string): Promise<Tokens>;
+  /** Revokes a refresh token with Auth0 (/remove); best effort, a failure never fails the removal. */
+  revoke(refreshToken: string): Promise<void>;
 }
 
 export interface UiHandlerOptions {
@@ -41,6 +43,11 @@ export interface UiHandlerOptions {
   now?: () => number;
   /** The installed package version, for the page footer. */
   version: string;
+  /**
+   * The one debug line the UI server writes: a failed revoke on /remove, with stage revoke and the HTTP
+   * status only (SPEC section 11). Nothing else is logged here.
+   */
+  debug?: (line: string) => void;
 }
 
 /** One account as the page shows it. Never carries tokens. */
@@ -277,9 +284,27 @@ export class UiHandlers {
     return this.status();
   }
 
-  /** Deletes the account file and everything this process remembers about the account. */
+  /**
+   * Revokes the account's refresh token with Auth0 when it has one, then deletes the account file and
+   * everything this process remembers about the account. The revoke is best effort: a failure logs one
+   * debug line with stage revoke and the HTTP status, and the file is deleted regardless.
+   */
   async remove(payload: unknown): Promise<{ ok: true }> {
     const id = accountId(payload);
+    let refreshToken: string | undefined;
+    try {
+      refreshToken = (await this.options.store.load(id))?.refreshToken;
+    } catch {
+      refreshToken = undefined;
+    }
+    if (refreshToken !== undefined && refreshToken.length > 0) {
+      try {
+        await this.options.auth.revoke(refreshToken);
+      } catch (error) {
+        const status = error instanceof AuthError ? error.status : undefined;
+        this.options.debug?.(`Account removed; session revoke failed at stage revoke, HTTP ${status ?? 'none'}`);
+      }
+    }
     this.forget(id);
     this.browserSessions.delete(id);
     this.avatars.delete(id);

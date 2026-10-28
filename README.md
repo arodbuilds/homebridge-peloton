@@ -155,7 +155,7 @@ When the plugin sees a code it does not know it logs one line, "New Peloton devi
 - Profile photos are fetched by the plugin and proxied to the settings page; the page never talks to Peloton's servers itself.
 - The log never contains tokens, passwords, emails, or Peloton's responses. Debug logging prints workout ids and statuses only.
 - The devices seen list keeps only device codes (device type and platform) and the workout type each was first seen on, in the owner's account file. No workout ids, titles, dates, or account details are kept for it.
-- To remove everything for an account, click Remove on its card. To remove every stored sign-in, delete the `homebridge-peloton` folder in the Homebridge storage folder.
+- To remove everything for an account, click Remove on its card. The plugin first asks Peloton to end that account's session (it revokes the stored refresh token), then deletes the account file; the file is deleted even if Peloton cannot be reached. To remove every stored sign-in, delete the `homebridge-peloton` folder in the Homebridge storage folder.
 
 ## Troubleshooting
 
@@ -188,6 +188,7 @@ npm run build
 node dist/scripts/auth-probe.mjs login you@example.com        # prompts for the password without echo
 node dist/scripts/auth-probe.mjs login you@example.com --dump ./auth-dump
 node dist/scripts/auth-probe.mjs refresh
+node dist/scripts/auth-probe.mjs revoke                        # revokes the stored session, then shows a refresh with it fails
 node dist/scripts/auth-probe.mjs browser                       # prints the sign-in URL, waits for the pasted callback URL
 node dist/scripts/auth-probe.mjs me
 node dist/scripts/auth-probe.mjs workout --keys

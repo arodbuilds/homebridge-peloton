@@ -17,6 +17,7 @@ import {
   parseLoginPageConfig,
   redactFormValues,
   refresh,
+  revoke,
 } from '../dist/auth/peloton-auth.js';
 import { createFakeFetch, formBody, jsonBody } from './helpers/fake-fetch.mjs';
 import { authFixture, htmlResponse, jsonResponse, redirectResponse } from './helpers/fixtures.mjs';
@@ -674,6 +675,52 @@ describe('refresh', () => {
     const fetchImpl = createFakeFetch([new Error('ENOTFOUND')]);
     const error = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh');
     assert.equal(error.status, undefined);
+  });
+});
+
+describe('revoke', () => {
+  it('posts client_id and the token as JSON to /oauth/revoke on the Auth0 host, without following redirects, with a timeout', async () => {
+    let init;
+    const fetchImpl = createFakeFetch([(request) => {
+      init = request;
+      return { status: 200, headers: {}, body: '' };
+    }]);
+    const seen = [];
+    await revoke('redacted-refresh', async (url, options) => {
+      seen.push(options.signal);
+      return fetchImpl(url, options);
+    });
+    assert.equal(fetchImpl.requests.length, 1);
+    assert.equal(init.url, `${PELOTON_AUTH.tenantUrl}/oauth/revoke`);
+    assert.equal(PELOTON_AUTH.revokePath, '/oauth/revoke');
+    assert.equal(init.method, 'POST');
+    assert.equal(init.headers['content-type'], 'application/json');
+    assert.equal(init.redirect, 'manual');
+    assert.deepEqual(jsonBody(init), { client_id: PELOTON_AUTH.clientId, token: 'redacted-refresh' });
+    assert.ok(seen[0] instanceof globalThis.AbortSignal, 'the request carries a timeout signal');
+    assert.equal(PELOTON_AUTH.revokeTimeoutMs, 10_000);
+  });
+
+  it('maps a non-2xx, a redirect, a network failure and the timeout to stage revoke, never with the token', async () => {
+    const fetchImpl = createFakeFetch([
+      jsonResponse(400, { error: 'invalid_request', error_description: 'redacted-refresh is bad' }),
+      redirectResponse('https://auth.onepeloton.com/somewhere'),
+      new TypeError('fetch failed'),
+      new globalThis.DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+    ]);
+    const bad = await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke', 400);
+    assert.doesNotMatch(bad.message, /redacted-refresh/);
+    await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke', 302);
+    assert.equal(fetchImpl.requests.length, 2, 'the redirect is not followed');
+    assert.equal((await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke')).status, undefined);
+    assert.equal((await expectAuthError(revoke('redacted-refresh', fetchImpl), 'revoke')).status, undefined);
+  });
+
+  it('gives up after the timeout', async () => {
+    const hang = (url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason));
+    });
+    await expectAuthError(revoke('redacted-refresh', hang, { timeoutMs: 1 }), 'revoke');
   });
 });
 
