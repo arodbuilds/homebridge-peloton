@@ -474,7 +474,18 @@ describe('login', () => {
       authFixture('login-page'),
       jsonResponse(429, { error: 'too_many_requests', error_description: 'Slow down' }),
     ]);
-    await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 429);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 429);
+    assert.equal(error.rateLimited, true, 'a rate limited sign-in says so, so the platform does not try again');
+  });
+
+  it('marks a rate limited login page (the CDN page) as rate limited at stage authorize', async () => {
+    const fetchImpl = createFakeFetch([
+      authFixture('authorize-redirect'),
+      { status: 403, headers: { 'content-type': 'text/plain', 'retry-after': '600' }, body: 'error code: 1015' },
+    ]);
+    const error = await expectAuthError(login('a@example.com', 'p', fetchImpl, { now }), 'authorize', 403);
+    assert.equal(error.rateLimited, true);
+    assert.equal(error.retryAfter, 600);
   });
 
   it('maps a verification page after the credentials POST to verification_required', async () => {
@@ -639,6 +650,24 @@ describe('refresh', () => {
     const fetchImpl = createFakeFetch([htmlResponse(503, 'down')]);
     const error = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 503);
     assert.equal(error.code, undefined);
+  });
+
+  it('marks a rate limited refresh with its Retry-After, and an ordinary failure as not rate limited', async () => {
+    const fetchImpl = createFakeFetch([
+      { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '45' }, body: '{"error":"too_many_requests"}' },
+      { status: 403, headers: { 'content-type': 'text/plain' }, body: 'error code: 1015' },
+      htmlResponse(503, 'down'),
+      authFixture('token-invalid-grant'),
+    ]);
+    const limited = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 429, 'too_many_requests');
+    assert.equal(limited.rateLimited, true);
+    assert.equal(limited.retryAfter, 45);
+    const cdn = await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 403);
+    assert.equal(cdn.rateLimited, true);
+    assert.equal(cdn.retryAfter, undefined);
+    assert.equal(cdn.code, undefined, 'never invalid_grant, so the session is kept');
+    assert.equal((await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 503)).rateLimited, false);
+    assert.equal((await expectAuthError(refresh('redacted-old', fetchImpl, { now }), 'refresh', 403, 'invalid_grant')).rateLimited, false);
   });
 
   it('maps a network failure to stage refresh without a status', async () => {

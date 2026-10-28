@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { getLatestWorkout, getMe, getPerformanceGraph, getSubscriptions, getWorkout } from '../dist/api/peloton-api.js';
 import { AuthError } from '../dist/auth/peloton-auth.js';
 import { parseConfig } from '../dist/config.js';
-import { Poller, backoffInterval, nextLocalTime, workoutLabel } from '../dist/poller/poller.js';
+import { Poller, backoffInterval, nextLocalTime, rateLimitWait, workoutLabel } from '../dist/poller/poller.js';
 import { AccountStore } from '../dist/store/account-store.js';
 import { createFakeClock } from './helpers/fake-clock.mjs';
 import { apiFixture, apiResponse, jsonResponse } from './helpers/fixtures.mjs';
@@ -1211,6 +1211,190 @@ describe('open workout limit', () => {
     await h.clock.advance(12 * 60 * MINUTE);
     assert.equal(h.poller.state, 'locked');
     assert.deepEqual(h.named('workoutEnded'), []);
+  });
+});
+
+describe('rate limits', () => {
+  const MINUTE = 60_000;
+  const limited = (retryAfter) => ({
+    status: 429,
+    headers: { 'content-type': 'application/json', ...(retryAfter === undefined ? {} : { 'retry-after': String(retryAfter) }) },
+    body: '{"message":"Too many requests"}',
+  });
+  const cdnPage = { status: 403, headers: { 'content-type': 'text/plain' }, body: 'error code: 1015' };
+  const pauseLines = (h) => h.lines.warn.filter((line) => line.startsWith('Peloton is rate limiting'));
+
+  it('waits Retry-After clamped to the current interval and 30 minutes, else 2 minutes doubling up to 30', () => {
+    assert.equal(rateLimitWait(300, 1, 10), 300);
+    assert.equal(rateLimitWait(5, 1, 10), 10, 'never shorter than the interval');
+    assert.equal(rateLimitWait(0, 4, 120), 120);
+    assert.equal(rateLimitWait(7200, 1, 10), 1800, 'never longer than 30 minutes');
+    assert.deepEqual([1, 2, 3, 4, 5, 6, 40].map((streak) => rateLimitWait(undefined, streak, 10)), [120, 240, 480, 960, 1800, 1800, 1800]);
+    assert.equal(rateLimitWait(undefined, 1, 600), 600, 'a standby interval longer than 2 minutes is the floor');
+    assert.equal(rateLimitWait(undefined, 1, 3600), 1800);
+  });
+
+  it('pauses polling for every account on a 429 for Retry-After, with one warn line, then resumes the staggered schedule', async () => {
+    const h = await harness();
+    h.fetch.route(LIST_OWNER, [limited(300), apiResponse('workouts-empty')]).route(LIST_MEMBER, apiResponse('workouts-empty'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    await h.clock.advance(0);
+    // The immediate cycle polled both accounts; the owner's answer was rate limited.
+    assert.equal(h.poller.pausedUntil, h.clock.now() + 300_000);
+    assert.deepEqual(pauseLines(h), ['Peloton is rate limiting this network (HTTP 429); pausing polling for every account for 300s']);
+    const owner = h.fetch.count(LIST_OWNER);
+    const member = h.fetch.count(LIST_MEMBER);
+    await h.clock.advance(299_000);
+    assert.equal(h.fetch.count(LIST_OWNER), owner, 'the owner waits');
+    assert.equal(h.fetch.count(LIST_MEMBER), member, 'and so does everyone on the same IP address');
+    await h.clock.advance(1_000);
+    assert.equal(h.poller.pausedUntil, undefined);
+    assert.equal(h.fetch.count(LIST_OWNER), owner + 1, 'the first account polls when the pause ends');
+    await h.clock.advance(5_000);
+    assert.equal(h.fetch.count(LIST_MEMBER), member + 1, 'the next one a stagger step later');
+    await h.clock.advance(20_000);
+    assert.equal(h.fetch.count(LIST_OWNER), owner + 3, 'back on the fast interval');
+    assert.equal(pauseLines(h).length, 1);
+    assert.deepEqual(h.lines.warn.filter((line) => line.includes('consecutive poll failures')), [], 'a rate limit is not a backoff failure');
+  });
+
+  it('logs one pause when several polls of one cycle are rate limited, and doubles the wait only once per pause', async () => {
+    const h = await harness();
+    h.fetch.route('/workouts', limited());
+    h.poller.start();
+    h.poller.setSwitch(true);
+    await h.clock.advance(0);
+    assert.deepEqual(pauseLines(h), ['Peloton is rate limiting this network (HTTP 429); pausing polling for every account for 120s']);
+    await h.clock.advance(120_000);
+    assert.equal(pauseLines(h).at(-1), 'Peloton is rate limiting this network (HTTP 429); pausing polling for every account for 240s');
+    assert.equal(pauseLines(h).length, 2);
+  });
+
+  it('doubles the wait without Retry-After on each consecutive rate limited poll up to 30 minutes and resets on the next success', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, limited());
+    h.poller.start();
+    await h.clock.advance(0);
+    const waits = () => pauseLines(h).map((line) => Number(/for (\d+)s$/.exec(line)[1]));
+    for (const wait of [120, 240, 480, 960, 1800]) {
+      assert.equal(waits().at(-1), wait);
+      await h.clock.advance(wait * 1000);
+    }
+    assert.deepEqual(waits(), [120, 240, 480, 960, 1800, 1800]);
+    h.fetch.route(LIST_OWNER, [apiResponse('workouts-empty'), limited()]);
+    await h.clock.advance(1800 * 1000);
+    assert.equal(h.poller.pausedUntil, undefined, 'the success after the last pause resumed polling');
+    await h.clock.advance(120_000);
+    assert.equal(waits().at(-1), 120, 'and the next rate limit starts again from 2 minutes');
+  });
+
+  it('treats the CDN rate limit page as a rate limit and keeps other failures on the backoff', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, cdnPage);
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(pauseLines(h), ['Peloton is rate limiting this network (HTTP 403); pausing polling for every account for 120s']);
+    h.poller.stop();
+
+    const outage = await harness({ accounts: [OWNER] });
+    outage.fetch.route(LIST_OWNER, { status: 503, headers: {}, body: 'down' });
+    outage.poller.start();
+    await outage.clock.advance(10 * MINUTE);
+    assert.deepEqual(pauseLines(outage), []);
+    assert.equal(outage.poller.pausedUntil, undefined);
+    assert.match(outage.lines.warn[0], /^Owner: 3 consecutive poll failures \(HTTP 503\), backing off to/);
+  });
+
+  it('pauses on a rate limited token refresh without dropping the account', async () => {
+    let calls = 0;
+    const h = await harness({
+      accounts: [OWNER],
+      records: { a1: { accessTokenExpiresAt: 1_789_000_000_000 + 60_000 } },
+      refresh: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new AuthError('refresh', 429, undefined, { rateLimited: true, retryAfter: 600 });
+        }
+        return { accessToken: 'access-2', refreshToken: 'refresh-2', expiresAt: 1_789_000_000_000 + 48 * HOUR };
+      },
+    });
+    h.fetch.route(LIST_OWNER, apiResponse('workouts-empty'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(pauseLines(h), ['Peloton is rate limiting this network (HTTP 429); pausing polling for every account for 600s']);
+    assert.equal(h.fetch.count(LIST_OWNER), 0);
+    assert.deepEqual(h.named('accountStateChanged'), []);
+    assert.equal(readRecord(h.store, 'a1').refreshToken, 'refresh-1', 'the session is kept');
+    await h.clock.advance(600_000);
+    assert.equal(h.fetch.count(LIST_OWNER), 1);
+    assert.equal(readRecord(h.store, 'a1').refreshToken, 'refresh-2');
+  });
+
+  it('lets the fast polling switch change state during a pause but polls only when the pause ends', async () => {
+    const h = await harness();
+    h.fetch.route(LIST_OWNER, [limited(600), apiResponse('workouts-empty')]).route(LIST_MEMBER, apiResponse('workouts-empty'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.notEqual(h.poller.pausedUntil, undefined);
+    const before = h.fetch.requests.length;
+    h.poller.setSwitch(true);
+    assert.equal(h.poller.state, 'scanning');
+    assert.equal(h.poller.switchOn, true);
+    assert.ok(h.lines.info.includes('Fast polling switch on: scanning 2 accounts every 10s'));
+    await h.clock.advance(0);
+    assert.equal(h.fetch.requests.length, before, 'no immediate poll during the pause');
+    await h.clock.advance(599_000);
+    assert.equal(h.fetch.requests.length, before);
+    await h.clock.advance(1_000);
+    assert.equal(h.fetch.count(LIST_OWNER), 2, 'the switch takes effect when the pause ends');
+    await h.clock.advance(5_000);
+    assert.equal(h.fetch.count(LIST_MEMBER), 1, 'at the fast interval, staggered');
+    await h.clock.advance(5_000);
+    assert.equal(h.fetch.count(LIST_OWNER), 3);
+  });
+
+  it('checks the open workout limit first when a pause ends while locked', async () => {
+    const START = 1_789_000_000_000;
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', { start_time: START / 1000 }))
+      .route(WORKOUT_CYC, [jsonResponse(200, { ...apiFixture('workout-single-in-progress-cycling'), start_time: START / 1000 }), limited(3600)]);
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    await h.clock.advance(20_000);
+    assert.match(pauseLines(h)[0], /for 1800s$/, 'Retry-After of an hour waits 30 minutes');
+    // At 30 minutes 20 seconds the class is inside its 50 minute limit: the poll runs and is rate limited again.
+    await h.clock.advance(30 * MINUTE);
+    assert.equal(pauseLines(h).length, 2);
+    assert.equal(h.poller.state, 'locked');
+    const byId = h.fetch.count(WORKOUT_CYC);
+    await h.clock.advance(30 * MINUTE);
+    // The limit passed during the second pause: the end is processed at once, with no request.
+    assert.equal(h.poller.pausedUntil, undefined);
+    assert.equal(h.fetch.count(WORKOUT_CYC), byId);
+    assert.ok(h.lines.info.includes('Owner: workout still open after 50 minutes, treated as ended'));
+    assert.equal(h.poller.state, 'released');
+  });
+
+  it('skips the daily check-in during a pause, and a rate limited check-in pauses and stops there', async () => {
+    const h = await harness();
+    h.fetch.route('/workouts', limited(900)).route('/api/me', apiResponse('me-owner'));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.notEqual(h.poller.pausedUntil, undefined);
+    await h.poller.checkInNow();
+    assert.equal(h.fetch.count('/api/me'), 0);
+    assert.deepEqual(h.named('checkInComplete'), []);
+    assert.ok(h.lines.debug.includes('Daily check-in skipped while polling is paused for a rate limit'));
+    h.poller.stop();
+
+    const c = await harness();
+    c.fetch.route('/api/me', limited(60)).route('/workouts', apiResponse('workouts-empty'));
+    await c.poller.checkInNow();
+    assert.equal(c.fetch.count('/api/me'), 1, 'the member is not asked after the owner was rate limited');
+    assert.deepEqual(pauseLines(c), ['Peloton is rate limiting this network (HTTP 429); pausing polling for every account for 120s']);
+    assert.deepEqual(c.named('checkInComplete').map((event) => event.count), [0]);
   });
 });
 

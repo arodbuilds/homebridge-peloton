@@ -35,6 +35,7 @@ src/
   poller/poller.ts         the polling state machine (SPEC section 8)
   poller/rules.ts          pure functions: trigger matching, zone from sample, hold and dwell logic
   devices.ts               the one table from device_type to display name; unmapped codes display as the raw code
+  rate-limit.ts            pure helpers shared by api and auth: rate limited response, Retry-After in seconds
   accessories/             trigger sensor, fast polling switch, attention sensor
   ui/server.ts             @homebridge/plugin-ui-utils server (SPEC section 10)
   scripts/auth-probe.mts   standalone auth probe for the Pi, compiled to dist/scripts/auth-probe.mjs

@@ -314,6 +314,36 @@ describe('errors', () => {
     await expectApiError(getPerformanceGraph('w', 5, TOKEN, fetchImpl), 404);
   });
 
+  it('marks 429 as rate limited with its Retry-After in seconds, and never keeps the body', async () => {
+    const fetchImpl = createFakeFetch([
+      { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '120' }, body: '{"message":"Too many requests from u"}' },
+      { status: 429, headers: { 'retry-after': 'whenever' }, body: '' },
+    ]);
+    const error = await expectApiError(getLatestWorkout('u', TOKEN, fetchImpl), 429);
+    assert.equal(error.rateLimited, true);
+    assert.equal(error.retryAfter, 120);
+    assert.doesNotMatch(error.message, /Too many/);
+    const garbage = await expectApiError(getLatestWorkout('u', TOKEN, fetchImpl), 429);
+    assert.equal(garbage.rateLimited, true);
+    assert.equal(garbage.retryAfter, undefined);
+  });
+
+  it('marks the CDN rate limit page (error code: 1015) as rate limited whatever its status, and other failures as not', async () => {
+    const fetchImpl = createFakeFetch([
+      { status: 403, headers: { 'content-type': 'text/plain', 'retry-after': 'Wed, 28 Oct 2026 19:05:00 GMT' }, body: 'error code: 1015' },
+      htmlResponse(503, '<html>maintenance</html>'),
+      htmlResponse(403, 'error code: 1020'),
+    ]);
+    const cdn = await expectApiError(getWorkout('w', TOKEN, fetchImpl), 403);
+    assert.equal(cdn.rateLimited, true);
+    assert.equal(typeof cdn.retryAfter, 'number', 'an HTTP-date is read as seconds from now');
+    assert.doesNotMatch(cdn.message, /1015/, 'the body never reaches the error');
+    const outage = await expectApiError(getWorkout('w', TOKEN, fetchImpl), 503);
+    assert.equal(outage.rateLimited, false);
+    assert.equal(outage.retryAfter, undefined);
+    assert.equal((await expectApiError(getWorkout('w', TOKEN, fetchImpl), 403)).rateLimited, false);
+  });
+
   it('does not include the query string in the error path', async () => {
     const fetchImpl = createFakeFetch([jsonResponse(500, {})]);
     const error = await expectApiError(getLatestWorkout('u', TOKEN, fetchImpl), 500);

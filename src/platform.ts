@@ -52,6 +52,8 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
   private attention: AttentionSensor | undefined;
   private store: AccountStore | undefined;
   private poller: Poller | undefined;
+  /** Set when a startup sign-in was rate limited; the remaining startup sign-ins are skipped for this run (SPEC section 10). */
+  private signInRateLimited = false;
   private resolveLaunched: () => void = () => undefined;
 
   constructor(
@@ -129,6 +131,12 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       if (record?.state === 'connected' && record.accessToken !== undefined && record.refreshToken !== undefined) {
         continue;
       }
+      if (this.signInRateLimited && account.email !== undefined && account.password !== undefined) {
+        // Every account signs in from the same IP address: another attempt now would only add to the limit.
+        const displayName = account.displayName ?? record?.displayName ?? record?.username ?? account.id;
+        this.log.info(`${displayName}: sign-in skipped while Peloton is rate limiting; use the settings page to connect`);
+        continue;
+      }
       await this.signIn(account, record);
     }
   }
@@ -154,7 +162,12 @@ export class PelotonPlatform implements DynamicPlatformPlugin {
       this.log.info(`Connected ${account.displayName ?? result.record.displayName ?? displayName} (@${result.record.username ?? ''})`);
       return result.record;
     } catch (error) {
-      if (error instanceof AuthError) {
+      if (error instanceof AuthError && error.rateLimited) {
+        // One attempt, never a loop: the startup sign-ins after this one are skipped, and the re-login is one-shot anyway.
+        this.signInRateLimited = true;
+        const status = error.status ?? 'none';
+        this.log.info(`${displayName}: sign-in rate limited by Peloton at stage ${error.stage}, HTTP ${status}; use the settings page to connect`);
+      } else if (error instanceof AuthError) {
         this.log.info(`${displayName}: sign-in failed at stage ${error.stage}, HTTP ${error.status ?? 'none'}; use the settings page to connect`);
       } else {
         const status = error instanceof ApiError ? `HTTP ${error.status}` : error instanceof Error ? error.message : String(error);

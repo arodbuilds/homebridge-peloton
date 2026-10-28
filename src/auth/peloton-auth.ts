@@ -13,6 +13,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { type RateLimitInfo, rateLimitInfo } from '../rate-limit.js';
+
 /**
  * Everything Peloton-specific about the login. These constants are the only thing to change
  * when Peloton changes its login (tenant, client, redirect, or the Auth0 connection name).
@@ -66,20 +68,28 @@ export type AuthStage =
 
 /**
  * Every auth failure. Carries the stage and, where there was one, the HTTP status and the
- * OAuth error code. Never carries response bodies, tokens, or the password.
+ * OAuth error code. rateLimited is true when the response was HTTP 429 or the CDN's rate limit
+ * page, with retryAfter its Retry-After in seconds when usable (SPEC section 8.2). Never carries
+ * response bodies, tokens, or the password.
  */
 export class AuthError extends Error {
   public readonly stage: AuthStage;
   public readonly status?: number;
   /** OAuth error code such as invalid_grant, when the response carried one. */
   public readonly code?: string;
+  public readonly rateLimited: boolean;
+  public readonly retryAfter?: number;
 
-  constructor(stage: AuthStage, status?: number, code?: string) {
+  constructor(stage: AuthStage, status?: number, code?: string, rateLimit: RateLimitInfo = { rateLimited: false }) {
     super(status === undefined ? `Auth failed at ${stage}` : `Auth failed at ${stage} (HTTP ${status})`);
     this.name = 'AuthError';
     this.stage = stage;
     this.status = status;
     this.code = code;
+    this.rateLimited = rateLimit.rateLimited;
+    if (rateLimit.retryAfter !== undefined) {
+      this.retryAfter = rateLimit.retryAfter;
+    }
   }
 }
 
@@ -213,7 +223,7 @@ export async function login(
     throw new AuthError('authorize', loginPage.status);
   }
   if (loginPage.status < 200 || loginPage.status >= 300) {
-    throw new AuthError('authorize', loginPage.status);
+    throw new AuthError('authorize', loginPage.status, undefined, rateLimitInfo(loginPage.status, loginPage.body, loginPage.retryAfter, now()));
   }
   await dump.write('authorize-login-page', loginPage.body);
   // No verification check here: Universal Login bundles its Lock library and text dictionary, which
@@ -269,7 +279,8 @@ export async function login(
 
   if (credentialsResponse.status < 200 || credentialsResponse.status >= 300) {
     await dump.write('credentials-response', credentialsText);
-    throw classifyCredentialsFailure(credentialsResponse.status, credentialsText);
+    const rateLimit = rateLimitInfo(credentialsResponse.status, credentialsText, credentialsResponse.headers.get('retry-after'), now());
+    throw classifyCredentialsFailure(credentialsResponse.status, credentialsText, rateLimit);
   }
   await dump.write('credentials-response', credentialsText);
   if (looksLikeVerification(credentialsText)) {
@@ -303,7 +314,7 @@ export async function login(
     if (looksLikeVerification(callback.body)) {
       throw new AuthError('verification_required', callback.status);
     }
-    throw new AuthError('callback', callback.status);
+    throw new AuthError('callback', callback.status, undefined, rateLimitInfo(callback.status, callback.body, callback.retryAfter, now()));
   }
   const redirect = parseCallbackLocation(callback.location, callback.status);
   if (redirect.state !== state) {
@@ -328,9 +339,9 @@ export async function refresh(
     grant_type: 'refresh_token',
     client_id: PELOTON_AUTH.clientId,
     refresh_token: refreshToken,
-  }, 'refresh');
+  }, 'refresh', now);
   if (response.status < 200 || response.status >= 300) {
-    throw new AuthError('refresh', response.status, response.errorCode);
+    throw new AuthError('refresh', response.status, response.errorCode, response.rateLimit);
   }
   return tokensFromResponse(response.json, now, 'refresh', response.status, refreshToken);
 }
@@ -378,12 +389,12 @@ async function exchangeCode(code: string, verifier: string, fetchImpl: FetchImpl
     code_verifier: verifier,
     code,
     redirect_uri: PELOTON_AUTH.redirectUri,
-  }, 'exchange');
+  }, 'exchange', now);
   if (response.status < 200 || response.status >= 300) {
     if (response.errorCode === 'invalid_grant') {
       throw new AuthError('expired_code', response.status, response.errorCode);
     }
-    throw new AuthError('exchange', response.status, response.errorCode);
+    throw new AuthError('exchange', response.status, response.errorCode, response.rateLimit);
   }
   return tokensFromResponse(response.json, now, 'exchange', response.status);
 }
@@ -392,9 +403,10 @@ interface TokenResponse {
   status: number;
   json: Record<string, unknown>;
   errorCode?: string;
+  rateLimit: RateLimitInfo;
 }
 
-async function tokenRequest(fetchImpl: FetchImpl, body: Record<string, string>, stage: AuthStage): Promise<TokenResponse> {
+async function tokenRequest(fetchImpl: FetchImpl, body: Record<string, string>, stage: AuthStage, now: () => number): Promise<TokenResponse> {
   const url = new URL(PELOTON_AUTH.tokenPath, PELOTON_AUTH.tenantUrl).toString();
   let response: Response;
   try {
@@ -408,8 +420,9 @@ async function tokenRequest(fetchImpl: FetchImpl, body: Record<string, string>, 
     throw new AuthError(stage);
   }
   let json: Record<string, unknown> = {};
+  let text = '';
   try {
-    const text = await response.text();
+    text = await response.text();
     if (text.length > 0) {
       const parsed: unknown = JSON.parse(text);
       if (parsed !== null && typeof parsed === 'object') {
@@ -420,7 +433,8 @@ async function tokenRequest(fetchImpl: FetchImpl, body: Record<string, string>, 
     json = {};
   }
   const errorCode = typeof json.error === 'string' ? json.error : undefined;
-  return { status: response.status, json, errorCode };
+  const rateLimit = rateLimitInfo(response.status, text, response.headers.get('retry-after'), now());
+  return { status: response.status, json, errorCode, rateLimit };
 }
 
 function tokensFromResponse(
@@ -545,7 +559,7 @@ function parseCallbackLocation(location: string | undefined, status: number): Ca
  * Credentials failure classification
  * ---------------------------------------------------------------------------------------------- */
 
-function classifyCredentialsFailure(status: number, body: string): AuthError {
+function classifyCredentialsFailure(status: number, body: string, rateLimit: RateLimitInfo): AuthError {
   let code: string | undefined;
   let description = '';
   try {
@@ -572,19 +586,19 @@ function classifyCredentialsFailure(status: number, body: string): AuthError {
   }
   const haystack = `${code ?? ''} ${description} ${body.slice(0, 2000)}`;
   if (looksLikeVerification(haystack)) {
-    return new AuthError('verification_required', status, code);
+    return new AuthError('verification_required', status, code, rateLimit);
   }
   const wrongPassword = (code !== undefined && WRONG_PASSWORD_CODES.has(code.toLowerCase()))
     || /wrong (email|username|user)( or|\/)? ?password/i.test(haystack)
     || /invalid (email|username)? ?(or|\/)? ?password/i.test(haystack)
     || status === 401;
   if (wrongPassword) {
-    return new AuthError('credentials', status, code);
+    return new AuthError('credentials', status, code, rateLimit);
   }
   // Anything else on this step is not the user's credentials: a rate limit, an outage, or a
   // request Auth0 rejects (403 AnomalyDetected "Invalid state" when the body carries the wrong
   // state). The settings page then offers the browser fallback.
-  return new AuthError('authorize', status, code);
+  return new AuthError('authorize', status, code, rateLimit);
 }
 
 function looksLikeVerification(text: string): boolean {
@@ -759,7 +773,7 @@ async function request(fetchImpl: FetchImpl, jar: CookieJar, url: string, init: 
 }
 
 type FollowResult =
-  | { kind: 'page'; status: number; body: string; url: string }
+  | { kind: 'page'; status: number; body: string; url: string; retryAfter: string | null }
   | { kind: 'redirect_uri'; status: number; location: string };
 
 /**
@@ -800,7 +814,7 @@ async function followRedirects(
       continue;
     }
     const body = await response.text();
-    return { kind: 'page', status: response.status, body, url };
+    return { kind: 'page', status: response.status, body, url, retryAfter: response.headers.get('retry-after') };
   }
   throw new AuthError(stage);
 }
