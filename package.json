@@ -2,7 +2,7 @@
   "name": "homebridge-peloton",
   "displayName": "Peloton",
   "type": "module",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Peloton workouts as HomeKit sensors for Homebridge automations: run scenes when a workout starts or ends.",
   "author": "Alex Rodriguez (https://alex-rodriguez.com)",
   "license": "Apache-2.0",

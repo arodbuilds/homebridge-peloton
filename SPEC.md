@@ -1,6 +1,6 @@
 # homebridge-peloton SPEC
 
-Version: 1.0.2 (October 18, 2026: the developer auth probe is built but not published, the package description and the banner tagline offer workout start and end only, the Homebridge verification recorded, and the version)
+Version: 1.0.3 (October 28, 2026: Node 26 in CI, the open workout limit, the household pause on rate limits, revoking a removed account's session, and the version)
 Status: source of truth for the build. design/README.md is normative for the settings page layout, copy, and states; this document is normative for everything else. Where the two disagree, this document wins and the design README gets a clarification in the same PR.
 
 ## 1. Purpose
@@ -494,3 +494,4 @@ A runtime release (October 28, 2026): Node 26, the open workout limit, rate limi
 - 13: the rate limit, API, auth, poller and platform suites named above.
 - 4.1, 5, 5.1, 7, 10 and 11: removing an account revokes its session. revoke(refreshToken, fetchImpl) in src/auth/peloton-auth.ts, the only file that knows Auth0, posts to /oauth/revoke on the tenant the module already uses with { client_id, token }, content-type application/json, redirect manual, and a 10 s timeout (AbortSignal.timeout); AuthStage gains revoke. Decisions made for it: a 2xx is success and its body is drained unread; a 3xx is a failure, not followed; the UI server reads the record before deleting it and revokes only a non-empty refresh token, so a household profile or a reconnect_needed record sends nothing; the access token is not revoked (Auth0's endpoint takes refresh tokens, and the file holding the access token is deleted); a failure logs one debug line through console.debug, the UI server's only log line, which names no account; the probe gains a revoke command that revokes the stored refresh token and then refreshes with it, reporting success only when that refresh fails with invalid_grant.
 - 15: item 4, the revoke against Peloton's tenant is unverified until the probe runs on the Pi.
+- The version is 1.0.3 in package.json, package-lock.json, the test literals and the bug report form. engines, keywords, the files list, the platform registration and the storage paths are unchanged, so the verification requirements in 14 stay met.
