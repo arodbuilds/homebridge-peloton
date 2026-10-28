@@ -2,6 +2,12 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.3 (2026-10-28)
+
+### Changed
+
+- Node 26 support. Homebridge now runs on Node 26, and the build workflow tests Node 20, 22, 24, and 26; the 22, 24, and 26 legs update npm to the version the release uses. `engines.node` stays `>=20` and `engines.homebridge` is unchanged. Nothing in the source or the tests depended on an API Node 26 removed or warns on. The README requirements say Node 20 to 26 is tested.
+
 ## 1.0.2 (2026-10-18)
 
 A packaging and copy release, prepared as the plugin was verified by Homebridge (homebridge/plugins#1239). The developer auth probe stays out of the npm package, and nothing in the package description or the banner promises heart-rate zone triggers, which 1.0.x does not offer. No runtime code changes.

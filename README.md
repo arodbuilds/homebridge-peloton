@@ -34,7 +34,7 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 ## Requirements
 
 - Homebridge 1.8 or 2.x, with the Homebridge UI for the settings page.
-- Node 20 or later.
+- Node 20 or later. Every release is tested on Node 20, 22, 24, and 26.
 - A Peloton membership. Every profile you want to watch signs in with its own Peloton account.
 
 ## Install
@@ -165,7 +165,7 @@ When the plugin sees a code it does not know it logs one line, "New Peloton devi
 
 ## Development
 
-Node 20 or later. Install with `npm install`, then:
+Node 20 or later (CI runs Node 20, 22, 24, and 26). Install with `npm install`, then:
 
 | Script | What it does |
 | --- | --- |
