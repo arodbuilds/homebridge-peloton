@@ -4,6 +4,10 @@ All notable changes to homebridge-peloton are listed here. The format follows Ke
 
 ## 1.0.3 (2026-10-28)
 
+### Added
+
+- Open workout limit. A workout Peloton leaves IN_PROGRESS (someone walks away and never finishes) no longer keeps triggers on and the household on fast polling indefinitely. A class is treated as ended 20 minutes after its class length; a workout without a class length (Just Ride, Just Run, free workouts) after the new `advanced.openWorkoutLimitMinutes`, default 180, 30 to 720, under Advanced as "Treat an unfinished workout as ended after (minutes)". The check runs on every locked tick before the request, so a network outage cannot keep a sensor on either; the end is processed like any other (holds, keep-fast window, auto-off re-arm) and logs "{name}: workout still open after {minutes} minutes, treated as ended". The same workout is never locked on again, an IN_PROGRESS workout already past its limit is not a start (also at startup), and a later COMPLETE for it changes nothing.
+
 ### Changed
 
 - Node 26 support. Homebridge now runs on Node 26, and the build workflow tests Node 20, 22, 24, and 26; the 22, 24, and 26 legs update npm to the version the release uses. `engines.node` stays `>=20` and `engines.homebridge` is unchanged. Nothing in the source or the tests depended on an API Node 26 removed or warns on. The README requirements say Node 20 to 26 is tested.

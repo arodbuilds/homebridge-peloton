@@ -407,12 +407,19 @@ describe('settings section', () => {
     assert.equal(advanced.querySelector('summary').textContent, 'Advanced');
     assert.equal(advanced.open, false, 'collapsed while every setting is at its default');
     assert.deepEqual([...advanced.querySelectorAll('[data-path]')].map((node) => node.dataset.path),
-      ['name', 'debug', 'advanced.fastSwitchAutoOffMinutes', 'advanced.keepFastAfterEndMinutes', 'advanced.attentionSensor', 'advanced.dailyCheckIn',
-        'restore']);
+      ['name', 'debug', 'advanced.fastSwitchAutoOffMinutes', 'advanced.keepFastAfterEndMinutes', 'advanced.openWorkoutLimitMinutes',
+        'advanced.attentionSensor', 'advanced.dailyCheckIn', 'restore']);
     assert.deepEqual([...advanced.querySelectorAll('.form-label')].map((node) => node.textContent), [
-      'Name*', 'Fast polling switch turns off after (minutes)', 'Keep fast polling after a workout ends (minutes)', 'Daily check-in time',
-      'Devices seen', 'Restore from backup',
+      'Name*', 'Fast polling switch turns off after (minutes)', 'Keep fast polling after a workout ends (minutes)',
+      'Treat an unfinished workout as ended after (minutes)', 'Daily check-in time', 'Devices seen', 'Restore from backup',
     ]);
+    const openLimit = advanced.querySelector('[data-path="advanced.openWorkoutLimitMinutes"]');
+    assert.equal(openLimit.querySelector('input').value, '180');
+    assert.equal(openLimit.querySelector('input').getAttribute('min'), '30');
+    assert.equal(openLimit.querySelector('input').getAttribute('max'), '720');
+    assert.equal(openLimit.querySelector('.form-text').textContent,
+      'A class is treated as ended 20 minutes after its class length if Peloton still shows it in progress. '
+      + 'This applies to workouts without a class length, such as Just Ride or Just Run, so one left unfinished cannot keep a sensor on.');
     const keepFast = advanced.querySelector('[data-path="advanced.keepFastAfterEndMinutes"]');
     assert.equal(keepFast.querySelector('input').value, '5');
     assert.equal(keepFast.querySelector('input').getAttribute('min'), '0');
@@ -434,6 +441,8 @@ describe('settings section', () => {
     assert.equal(debug.root.querySelector('#section-settings details').open, true);
     const keepFast = mount({ advanced: { keepFastAfterEndMinutes: 0 } });
     assert.equal(keepFast.root.querySelector('#section-settings details').open, true, 'a changed keep-fast time opens Advanced too');
+    const openLimit = mount({ advanced: { openWorkoutLimitMinutes: 240 } });
+    assert.equal(openLimit.root.querySelector('#section-settings details').open, true, 'a changed open workout limit opens Advanced too');
 
     const { page, root } = mount({ accounts: [{ id: 'a1', email: 'owner@example.com' }] });
     const details = root.querySelector('#section-settings details');

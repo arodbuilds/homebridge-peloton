@@ -170,6 +170,15 @@ describe('validation', () => {
     assert.deepEqual(issuesFor({ advanced: { keepFastAfterEndMinutes: 0 } }), []);
     assert.equal(exportConfig(readConfig({})).advanced.keepFastAfterEndMinutes, 5);
     assert.equal(exportConfig(readConfig({ advanced: { keepFastAfterEndMinutes: 15 } })).advanced.keepFastAfterEndMinutes, 15);
+  });
+
+  it('checks the open workout limit from 30 to 720 minutes and writes 180 by default', () => {
+    assert.deepEqual(issuesFor({ advanced: { openWorkoutLimitMinutes: 29 } }), ['Settings: Enter a number of minutes from 30 to 720.']);
+    assert.deepEqual(issuesFor({ advanced: { openWorkoutLimitMinutes: 721 } }), ['Settings: Enter a number of minutes from 30 to 720.']);
+    assert.deepEqual(issuesFor({ advanced: { openWorkoutLimitMinutes: 30 } }), []);
+    assert.deepEqual(issuesFor({ advanced: { openWorkoutLimitMinutes: 720 } }), []);
+    assert.equal(exportConfig(readConfig({})).advanced.openWorkoutLimitMinutes, 180);
+    assert.equal(exportConfig(readConfig({ advanced: { openWorkoutLimitMinutes: 240 } })).advanced.openWorkoutLimitMinutes, 240);
     assert.deepEqual(issuesFor({}), []);
   });
 

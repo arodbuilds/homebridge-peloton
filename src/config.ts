@@ -71,6 +71,12 @@ export interface AdvancedConfig {
   fastSwitchAutoOffMinutes: number;
   /** Minutes the fast interval is kept after any workout ends, whatever the switch; 0 means none. */
   keepFastAfterEndMinutes: number;
+  /**
+   * Minutes after its start a workout without a class length (Just Ride, Just Run, a free workout) may
+   * stay IN_PROGRESS before it is treated as ended (SPEC section 8.2); 30 to 720. A class gets its own
+   * length plus 20 minutes instead.
+   */
+  openWorkoutLimitMinutes: number;
   attentionSensor: boolean;
   /** Local time "HH:MM". */
   dailyCheckIn: string;
@@ -97,6 +103,9 @@ export const CONFIG_DEFAULTS = {
   fastSwitchName: 'Peloton fast polling',
   fastSwitchAutoOffMinutes: 120,
   keepFastAfterEndMinutes: 5,
+  openWorkoutLimitMinutes: 180,
+  openWorkoutLimitMinutesMin: 30,
+  openWorkoutLimitMinutesMax: 720,
   attentionSensor: false,
   dailyCheckIn: '03:00',
   workoutTriggerName: 'Workout',
@@ -156,6 +165,12 @@ export function parseConfig(raw: unknown, options: ParseConfigOptions = {}): Pel
       }, warn),
       keepFastAfterEndMinutes: integer(advanced.keepFastAfterEndMinutes, {
         name: 'advanced.keepFastAfterEndMinutes', fallback: CONFIG_DEFAULTS.keepFastAfterEndMinutes, min: 0,
+      }, warn),
+      openWorkoutLimitMinutes: integer(advanced.openWorkoutLimitMinutes, {
+        name: 'advanced.openWorkoutLimitMinutes',
+        fallback: CONFIG_DEFAULTS.openWorkoutLimitMinutes,
+        min: CONFIG_DEFAULTS.openWorkoutLimitMinutesMin,
+        max: CONFIG_DEFAULTS.openWorkoutLimitMinutesMax,
       }, warn),
       attentionSensor: bool(advanced.attentionSensor, CONFIG_DEFAULTS.attentionSensor, 'advanced.attentionSensor', warn),
       dailyCheckIn: dailyCheckIn(advanced.dailyCheckIn, warn),

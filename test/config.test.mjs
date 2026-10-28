@@ -27,7 +27,7 @@ describe('defaults', () => {
         standbyInterval: 120,
         calloutDismissed: false,
       },
-      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, openWorkoutLimitMinutes: 180, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -46,7 +46,7 @@ describe('defaults', () => {
         { id: 't2', type: 'hrZone', name: 'Zone 4 or higher', accessory: 'occupancy', who: 'u-owner-0001', zone: 4, holdTime: 20 },
       ],
       polling: { fastSwitch: true, fastSwitchName: 'Peloton fast polling', fastInterval: 10, standbyInterval: 120, calloutDismissed: false },
-      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, attentionSensor: false, dailyCheckIn: '03:00' },
+      advanced: { fastSwitchAutoOffMinutes: 120, keepFastAfterEndMinutes: 5, openWorkoutLimitMinutes: 180, attentionSensor: false, dailyCheckIn: '03:00' },
       debug: false,
     });
     assert.deepEqual(warnings, []);
@@ -119,6 +119,25 @@ describe('clamping and defaulting', () => {
     const text = parse({ advanced: { keepFastAfterEndMinutes: 'soon' } });
     assert.equal(text.config.advanced.keepFastAfterEndMinutes, 5);
     assert.deepEqual(text.warnings, ['advanced.keepFastAfterEndMinutes is not a number, using 5']);
+  });
+
+  it('accepts openWorkoutLimitMinutes from 30 to 720, clamps outside the range with one warn line, and defaults a non-number to 180', () => {
+    assert.equal(CONFIG_DEFAULTS.openWorkoutLimitMinutes, 180);
+    for (const minutes of [30, 90, 720]) {
+      const parsed = parse({ advanced: { openWorkoutLimitMinutes: minutes } });
+      assert.equal(parsed.config.advanced.openWorkoutLimitMinutes, minutes);
+      assert.deepEqual(parsed.warnings, []);
+    }
+    assert.equal(parse({ advanced: { openWorkoutLimitMinutes: '240' } }).config.advanced.openWorkoutLimitMinutes, 240);
+    const low = parse({ advanced: { openWorkoutLimitMinutes: 10 } });
+    assert.equal(low.config.advanced.openWorkoutLimitMinutes, 30);
+    assert.deepEqual(low.warnings, ['advanced.openWorkoutLimitMinutes is below 30, using 30']);
+    const high = parse({ advanced: { openWorkoutLimitMinutes: 1440 } });
+    assert.equal(high.config.advanced.openWorkoutLimitMinutes, 720);
+    assert.deepEqual(high.warnings, ['advanced.openWorkoutLimitMinutes is above 720, using 720']);
+    const text = parse({ advanced: { openWorkoutLimitMinutes: 'all day' } });
+    assert.equal(text.config.advanced.openWorkoutLimitMinutes, 180);
+    assert.deepEqual(text.warnings, ['advanced.openWorkoutLimitMinutes is not a number, using 180']);
   });
 
   it('defaults booleans, the check-in time, and unknown trigger type or accessory kind', () => {

@@ -25,6 +25,9 @@ export const DEFAULTS = {
   zone: 4,
   fastSwitchAutoOffMinutes: 120,
   keepFastAfterEndMinutes: 5,
+  openWorkoutLimitMinutes: 180,
+  openWorkoutLimitMinutesMin: 30,
+  openWorkoutLimitMinutesMax: 720,
   attentionSensor: false,
   dailyCheckIn: '03:00',
   debug: false,
@@ -175,6 +178,7 @@ export function readConfig(raw) {
     advanced: {
       fastSwitchAutoOffMinutes: num(advanced.fastSwitchAutoOffMinutes, DEFAULTS.fastSwitchAutoOffMinutes),
       keepFastAfterEndMinutes: num(advanced.keepFastAfterEndMinutes, DEFAULTS.keepFastAfterEndMinutes),
+      openWorkoutLimitMinutes: num(advanced.openWorkoutLimitMinutes, DEFAULTS.openWorkoutLimitMinutes),
       attentionSensor: bool(advanced.attentionSensor, DEFAULTS.attentionSensor),
       dailyCheckIn: TIME_PATTERN.test(text(advanced.dailyCheckIn, '')) ? advanced.dailyCheckIn : DEFAULTS.dailyCheckIn,
     },
@@ -276,6 +280,8 @@ export function exportConfig(config, summaries = []) {
     advanced: {
       fastSwitchAutoOffMinutes: whole(config.advanced.fastSwitchAutoOffMinutes, DEFAULTS.fastSwitchAutoOffMinutes),
       keepFastAfterEndMinutes: Math.max(0, whole(config.advanced.keepFastAfterEndMinutes, DEFAULTS.keepFastAfterEndMinutes)),
+      openWorkoutLimitMinutes: Math.min(DEFAULTS.openWorkoutLimitMinutesMax,
+        Math.max(DEFAULTS.openWorkoutLimitMinutesMin, whole(config.advanced.openWorkoutLimitMinutes, DEFAULTS.openWorkoutLimitMinutes))),
       attentionSensor: config.advanced.attentionSensor,
       dailyCheckIn: TIME_PATTERN.test(config.advanced.dailyCheckIn) ? config.advanced.dailyCheckIn : DEFAULTS.dailyCheckIn,
     },
@@ -406,6 +412,10 @@ export function validate(config, options = {}) {
   }
   if (!Number.isFinite(config.advanced.keepFastAfterEndMinutes) || config.advanced.keepFastAfterEndMinutes < 0) {
     issues.push({ path: 'advanced.keepFastAfterEndMinutes', label: settings, message: VALIDATION.minutesFloorZero });
+  }
+  const openLimit = config.advanced.openWorkoutLimitMinutes;
+  if (!Number.isFinite(openLimit) || openLimit < DEFAULTS.openWorkoutLimitMinutesMin || openLimit > DEFAULTS.openWorkoutLimitMinutesMax) {
+    issues.push({ path: 'advanced.openWorkoutLimitMinutes', label: settings, message: VALIDATION.openLimitRange });
   }
   if (!TIME_PATTERN.test(config.advanced.dailyCheckIn)) {
     issues.push({ path: 'advanced.dailyCheckIn', label: settings, message: VALIDATION.timeFormat });

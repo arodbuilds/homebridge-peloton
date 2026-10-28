@@ -1114,6 +1114,106 @@ describe('devices seen', () => {
   });
 });
 
+describe('open workout limit', () => {
+  const MINUTE = 60_000;
+  const START = 1_789_000_000_000;
+  /** The cycling workout, started at the fake clock's start, as the list and the single call return it. */
+  const times = (extra = {}) => ({ start_time: START / 1000, created_at: START / 1000 - 10, ...extra });
+  const single = (status, extra = {}) => jsonResponse(200, { ...apiFixture('workout-single-in-progress-cycling'), status, ...times(extra) });
+
+  it('treats a class still IN_PROGRESS 20 minutes after its length as ended, like a normal end, without fetching on that tick', async () => {
+    const h = await harness({ accounts: [OWNER] });
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', times())).route(WORKOUT_CYC, single('IN_PROGRESS'));
+    h.poller.start();
+    h.poller.setSwitch(true);
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    // The 30 minute class has a 50 minute limit; at the deadline itself the workout is still open.
+    await h.clock.advance(50 * MINUTE);
+    assert.equal(h.poller.state, 'locked');
+    const fetchesBefore = h.fetch.count(WORKOUT_CYC);
+    await h.clock.advance(10_000);
+    const endedAt = h.clock.now();
+    assert.equal(h.fetch.count(WORKOUT_CYC), fetchesBefore, 'the tick that trips makes no request');
+    assert.equal(h.poller.state, 'released');
+    assert.deepEqual(h.named('workoutEnded').map((event) => [event.accountId, event.workoutId]), [['a1', 'w-cyc-0001']]);
+    assert.ok(h.lines.info.includes('Owner: workout still open after 50 minutes, treated as ended'));
+    assert.equal(h.lines.info.includes('Owner: workout ended'), false, 'one line for the end, not two');
+    assert.equal(h.poller.triggerStates.get('t-workout'), true, 'the hold runs as after any end');
+    assert.equal(h.poller.keepFastUntil, endedAt + 5 * MINUTE, 'the keep-fast window starts');
+    assert.equal(h.poller.autoOffAt, endedAt + 120 * MINUTE, 'the auto-off timer is re-armed');
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.triggerStates.get('t-workout'), false);
+    assert.equal(h.poller.state, 'scanning');
+
+    // The list still shows the same IN_PROGRESS id: it is the last seen active id, so no new lock.
+    await h.clock.advance(10 * MINUTE);
+    assert.equal(h.named('workoutStarted').length, 1);
+    assert.equal(h.poller.state, 'scanning');
+    // Peloton marking it COMPLETE later changes nothing.
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'COMPLETE', times()));
+    await h.clock.advance(MINUTE);
+    assert.equal(h.named('workoutEnded').length, 1);
+    assert.equal(h.named('triggerChanged').length, 2);
+  });
+
+  it('ends a workout without a class length after advanced.openWorkoutLimitMinutes even while every fetch fails', async () => {
+    const h = await harness({ accounts: [OWNER], config: { advanced: { openWorkoutLimitMinutes: 30 } } });
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', times({ ride: null })))
+      .route(WORKOUT_CYC, single('IN_PROGRESS', { ride: null }));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.equal(h.poller.state, 'locked');
+    h.fetch.route(WORKOUT_CYC, new TypeError('fetch failed'));
+    await h.clock.advance(29 * MINUTE);
+    assert.equal(h.poller.state, 'locked', 'an outage alone keeps the last known state');
+    assert.equal(h.poller.triggerStates.get('t-workout'), true);
+    await h.clock.advance(2 * MINUTE);
+    assert.equal(h.poller.state === 'released' || h.poller.state === 'standby', true);
+    assert.ok(h.lines.info.includes('Owner: workout still open after 30 minutes, treated as ended'));
+    assert.equal(h.named('workoutEnded').length, 1);
+    await h.clock.advance(90_000);
+    assert.equal(h.poller.triggerStates.get('t-workout'), false, 'no sensor stays on through the outage');
+  });
+
+  it('never starts on an IN_PROGRESS workout already past its limit, at startup or later', async () => {
+    const old = await harness({ accounts: [OWNER] });
+    // A Just Ride left open four hours ago, past the 180 minute default.
+    old.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', { start_time: START / 1000 - 4 * 3600, ride: null }));
+    old.poller.start();
+    await old.clock.advance(0);
+    assert.equal(old.poller.state, 'standby');
+    assert.deepEqual(old.named('workoutStarted'), []);
+    assert.deepEqual(old.lines.info, []);
+    assert.ok(old.lines.debug.includes('Owner: workout w-cyc-0001 has been open past its limit, not a start'));
+    old.poller.stop();
+
+    // A 30 minute class started 51 minutes ago is past its 50 minute limit; one started 49 minutes ago is not.
+    const late = await harness({ accounts: [OWNER] });
+    late.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', { start_time: START / 1000 - 51 * 60 }));
+    late.poller.start();
+    late.poller.setSwitch(true);
+    await late.clock.advance(30_000);
+    assert.deepEqual(late.named('workoutStarted'), []);
+    late.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { start_time: START / 1000 - 49 * 60 }))
+      .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+    await late.clock.advance(10_000);
+    assert.equal(late.poller.state, 'locked');
+    assert.deepEqual(late.named('workoutStarted').map((event) => event.workout.id), ['w-str-0002']);
+  });
+
+  it('never ends a workout with no start time on the limit', async () => {
+    const h = await harness({ accounts: [OWNER], config: { advanced: { openWorkoutLimitMinutes: 30 } } });
+    h.fetch.route(LIST_OWNER, listBody('w-cyc-0001', 'IN_PROGRESS', { start_time: null, created_at: null, ride: null }))
+      .route(WORKOUT_CYC, jsonResponse(200, { ...apiFixture('workout-single-in-progress-cycling'), start_time: null, created_at: null, ride: null }));
+    h.poller.start();
+    await h.clock.advance(0);
+    await h.clock.advance(12 * 60 * MINUTE);
+    assert.equal(h.poller.state, 'locked');
+    assert.deepEqual(h.named('workoutEnded'), []);
+  });
+});
+
 describe('stop', () => {
   it('cancels every timer', async () => {
     const h = await harness();

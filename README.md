@@ -92,6 +92,7 @@ Settings holds one Advanced disclosure, collapsed until something inside it is c
 - Debug logging: logs every poll and the workout data it returns; sign-in details and session tokens are never logged.
 - Fast polling switch turns off after: the auto-off period in minutes.
 - Keep fast polling after a workout ends: how many minutes the plugin keeps the fast interval after any workout ends, even with the switch off, so a second workout is caught quickly. 5 by default, 0 turns it off.
+- Treat an unfinished workout as ended after: a workout Peloton still shows in progress long after anyone is riding (someone walked away without finishing) would otherwise keep your sensor on. A class is treated as ended 20 minutes after its class length; this setting covers workouts without a class length, such as Just Ride or Just Run. 180 minutes by default, from 30 to 720.
 - Attention needed sensor: an occupancy sensor that is on while any account needs to be reconnected, for an automation that sends you a notification.
 - Daily check-in time: once a day the plugin refreshes each account's session and heart-rate zones, even when nobody is working out.
 - Devices seen: a read-only list of the device codes the plugin has seen on your membership, each tagged Known or Unknown. An Unknown row has a Copy report button; see [Devices](#devices).
@@ -123,6 +124,7 @@ If Back does not show the callback address, long-press the Back button and pick 
 - **Lock-on.** One workout is followed at a time. Other members' workouts are not polled while a workout is locked, so two riders on one membership should start the second ride after the first has ended, or use one Workout trigger for anyone.
 - **Hold.** A Workout sensor stays on for the keep-on time after the class ends, and a new matching workout during that time keeps it on without a gap. A Heart-rate zone sensor changes only after the zone has held for the hold time, and turns off when the workout ends.
 - **Third-party imports are ignored.** Runs and other activities synced into Peloton from Apple Health, Strava, or Fitbit never start or end a workout, even when they land at the top of your workout list mid-ride.
+- **Unfinished workouts.** A workout Peloton leaves in progress is treated as ended once it has been open 20 minutes longer than its class, or, without a class length, for the minutes set under Advanced (180 by default). This happens even while Peloton cannot be reached, so a sensor never stays on indefinitely, and the same workout is never picked up again.
 - **Fast polling after a workout.** After any workout ends the plugin keeps the fast interval for the minutes set under Advanced (5 by default), whatever the switch, then follows the switch again.
 - **Configuration.** The settings page writes the platform block in config.json; the shape and every default are in [SPEC.md](SPEC.md) section 6 and in `config.schema.json`, for anyone who edits by hand.
 

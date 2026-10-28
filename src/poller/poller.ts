@@ -14,7 +14,10 @@ import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerC
 import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
 import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
-import { HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, workoutMatches, zoneBounds, zoneForSample } from './rules.js';
+import {
+  HoldAfterEnd, HoldState, type ZoneProfile, hrZoneTargets, isDetectable, isOpenTooLong, openWorkoutDeadline, openWorkoutLimitMs, workoutMatches,
+  zoneBounds, zoneForSample,
+} from './rules.js';
 
 export type PollerState = 'standby' | 'scanning' | 'locked' | 'released';
 
@@ -241,6 +244,13 @@ export class Poller {
   private switchIsOn = false;
   private lockedAccountId: string | undefined;
   private lockedWorkoutId: string | undefined;
+  /**
+   * The locked workout's open limit (SPEC section 8.2): the time after which it is treated as ended
+   * even while Peloton still reports it IN_PROGRESS, undefined when it has no start time, and the
+   * limit itself in milliseconds for the log line.
+   */
+  private lockedDeadline: number | undefined;
+  private lockedLimitMs = 0;
   private releasedAccountId: string | undefined;
   private generation = 0;
   private started = false;
@@ -657,6 +667,14 @@ export class Poller {
       // A stale list poll: the household locked on or the schedule changed while this timer waited.
       return;
     }
+    if (kind === 'locked' && this.lockedOpenTooLong(runtime)) {
+      // Checked on every locked tick before the fetch, so neither a workout Peloton leaves IN_PROGRESS
+      // nor a network outage can keep a sensor on (SPEC section 8.2). The end is processed like any
+      // other and the released state takes over below; this tick makes no request.
+      this.endWorkout(runtime, 'limit');
+      this.scheduleAfterPoll(runtime, kind, generation);
+      return;
+    }
     runtime.polling = true;
     let dropped = false;
     try {
@@ -675,8 +693,14 @@ export class Poller {
     if (dropped) {
       return;
     }
-    // A poll may have changed the state; schedule the next poll for where we are now. The locked or
-    // released account keeps its own chain; everyone else follows the household schedule.
+    this.scheduleAfterPoll(runtime, kind, generation);
+  }
+
+  /**
+   * A poll may have changed the state; schedules the next poll for where we are now. The locked or
+   * released account keeps its own chain; everyone else follows the household schedule.
+   */
+  private scheduleAfterPoll(runtime: AccountRuntime, kind: 'list' | 'locked' | 'released', generation: number): void {
     if (this.currentState === 'locked' && this.lockedAccountId === runtime.account.id) {
       this.scheduleNext(runtime, 'locked', this.generation);
     } else if (this.currentState === 'released' && this.releasedAccountId === runtime.account.id) {
@@ -701,7 +725,27 @@ export class Poller {
       return;
     }
     if (workout.status === 'IN_PROGRESS' && workout.id !== runtime.lastSeenActiveId) {
+      if (isOpenTooLong(workout, this.now(), this.config.advanced.openWorkoutLimitMinutes)) {
+        // Left IN_PROGRESS past its limit (SPEC section 8.2): an old workout nobody finished, not a start.
+        this.log.debug(`${account.displayName}: workout ${workout.id} has been open past its limit, not a start`);
+        return;
+      }
       this.startWorkout(runtime, workout);
+    }
+  }
+
+  /** True when the followed workout has been open past its limit (SPEC section 8.2). */
+  private lockedOpenTooLong(runtime: AccountRuntime): boolean {
+    return this.currentState === 'locked' && this.lockedAccountId === runtime.account.id
+      && this.lockedDeadline !== undefined && this.now() > this.lockedDeadline;
+  }
+
+  /** Sets the followed workout's open limit; a workout without a start time keeps the last known one. */
+  private setLockedLimit(workout: Workout): void {
+    const deadline = openWorkoutDeadline(workout, this.config.advanced.openWorkoutLimitMinutes);
+    if (deadline !== undefined) {
+      this.lockedDeadline = deadline;
+      this.lockedLimitMs = openWorkoutLimitMs(workout, this.config.advanced.openWorkoutLimitMinutes);
     }
   }
 
@@ -712,6 +756,7 @@ export class Poller {
     this.debugWorkout(runtime, workout);
     await this.recordDeviceSeen(runtime, workout);
     runtime.latestWorkout = workout;
+    this.setLockedLimit(workout);
     if (workout.status === 'COMPLETE') {
       this.endWorkout(runtime);
       return;
@@ -871,6 +916,9 @@ export class Poller {
     runtime.noHeartRateLogged = false;
     this.lockedAccountId = account.id;
     this.lockedWorkoutId = workout.id;
+    this.lockedDeadline = undefined;
+    this.lockedLimitMs = 0;
+    this.setLockedLimit(workout);
     this.releasedAccountId = undefined;
     for (const other of this.accounts.values()) {
       if (other !== runtime) {
@@ -897,18 +945,30 @@ export class Poller {
     }
   }
 
-  private endWorkout(runtime: AccountRuntime): void {
+  /**
+   * Ends the followed workout: Peloton reported it COMPLETE, the account dropped out of polling, or it
+   * stayed open past its limit (SPEC section 8.2). Every reason is processed the same way; only the log
+   * line differs. The id stays the last seen active id, so the list never locks on it again.
+   */
+  private endWorkout(runtime: AccountRuntime, reason: 'complete' | 'limit' = 'complete'): void {
     const { account } = runtime;
     const workoutId = this.lockedWorkoutId as string;
+    const limitMinutes = Math.round(this.lockedLimitMs / 60_000);
     this.lockedAccountId = undefined;
     this.lockedWorkoutId = undefined;
+    this.lockedDeadline = undefined;
+    this.lockedLimitMs = 0;
     this.releasedAccountId = account.id;
     this.lastWorkoutEndAt = this.now();
     if (this.switchIsOn) {
       this.armAutoOff();
     }
     this.armKeepFast();
-    this.log.info(`${account.displayName}: workout ended`);
+    if (reason === 'limit') {
+      this.log.info(`${account.displayName}: workout still open after ${limitMinutes} minutes, treated as ended`);
+    } else {
+      this.log.info(`${account.displayName}: workout ended`);
+    }
     this.emit('workoutEnded', { accountId: account.id, userId: account.userId, displayName: account.displayName, workoutId });
     for (const trigger of this.triggers) {
       if (trigger.trigger.type === 'workout') {
