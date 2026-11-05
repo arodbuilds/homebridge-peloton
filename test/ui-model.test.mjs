@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { FIELD_LABELS, STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, deviceReport, devicesText, duplicateTrigger, exportConfig,
+  ACTIVITIES, activityId, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, deviceReport, devicesText, duplicateTrigger, exportConfig,
   findForbiddenKey, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
 import { required } from '../homebridge-ui/public/shell-copy.js';
@@ -131,6 +131,22 @@ describe('triggers', () => {
     // Deselecting one chip writes the other eleven, so the plugin restricts the trigger.
     config.triggers[0].activities = ACTIVITIES.filter((activity) => activity !== 'cycling');
     assert.equal(exportConfig(config).triggers[0].activities.length, 11);
+  });
+
+  it('reads the Peloton slugs caesar, circuit, and caesar_bootcamp as the plugin ids, so saving the page keeps the restriction', () => {
+    const config = readConfig({
+      triggers: [
+        { id: 't1', type: 'workout', name: 'Rows', activities: ['caesar'] },
+        { id: 't2', type: 'workout', name: 'Bootcamps', activities: ['circuit', 'caesar_bootcamp', 'tread_bootcamp'] },
+        { id: 't3', type: 'workout', name: 'Legacy', activities: ['rowing', 'tread_bootcamp', 'row_bootcamp'] },
+      ],
+    });
+    const exported = exportConfig(config).triggers;
+    assert.deepEqual(exported[0].activities, ['rowing']);
+    assert.deepEqual(exported[1].activities, ['tread_bootcamp', 'row_bootcamp']);
+    assert.deepEqual(exported[2].activities, ['rowing', 'tread_bootcamp', 'row_bootcamp']);
+    assert.equal(activityId('toString'), undefined);
+    assert.equal(activityId(3), undefined);
   });
 
   it('duplicates with a new id and a copy name that dodges existing names', () => {
@@ -263,8 +279,16 @@ describe('devices line', () => {
 describe('device report', () => {
   it('is exactly the two codes, the discipline, and the plugin version, one per line', () => {
     assert.equal(
-      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false }, '1.0.3'),
-      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.3',
+      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar', disciplineName: 'Rowing', name: 'row_v1', known: false }, '1.0.4'),
+      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: caesar (Rowing)\nplugin: homebridge-peloton 1.0.4',
     );
+  });
+
+  it('carries the raw discipline alone when its readable name is the same, unknown, or missing', () => {
+    const device = { deviceType: 'android', platform: 'android_app', name: 'android', known: false };
+    const line = (extra) => deviceReport({ ...device, ...extra }, '1.0.4').split('\n')[3];
+    assert.equal(line({ discipline: 'boxing', disciplineName: 'boxing' }), 'discipline: boxing');
+    assert.equal(line({ discipline: 'cycling' }), 'discipline: cycling', 'an answer from an earlier server has no readable name');
+    assert.equal(line({ discipline: '', disciplineName: '' }), 'discipline: ');
   });
 });

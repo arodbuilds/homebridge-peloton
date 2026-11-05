@@ -11,6 +11,7 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
+import { disciplineName, isKnownDiscipline } from '../activities.js';
 import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
 import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
@@ -156,13 +157,15 @@ export const GRAPH_EVERY_N = 5;
 export const STALE_SAMPLE_POLLS = 2;
 
 /**
- * What the "workout started" line says in brackets (SPEC section 11): the discipline, then the class
- * title when there is one (ride.title, else the workout's title, else its name), so an app class
- * without a ride title logs the discipline alone rather than an empty title.
+ * What the "workout started" line says in brackets (SPEC section 11): the discipline's readable name
+ * ("Rowing" for caesar, the raw value when it is unknown, src/activities.ts), then the class title
+ * when there is one (ride.title, else the workout's title, else its name), so an app class without
+ * a ride title logs the discipline alone rather than an empty title. Debug lines keep the raw value.
  */
 export function workoutLabel(workout: Workout): string {
+  const discipline = disciplineName(workout.fitnessDiscipline);
   const title = (workout.ride?.title || workout.title || workout.name).trim();
-  return title.length > 0 ? `${workout.fitnessDiscipline}, ${title}` : workout.fitnessDiscipline;
+  return title.length > 0 ? `${discipline}, ${title}` : discipline;
 }
 
 /** The key a device_type and platform pair is remembered by. */
@@ -296,6 +299,8 @@ export class Poller {
   /** Every device_type and platform pair already recorded (SPEC section 8.2), loaded from the store on first use. */
   private seenDevices: Set<string> | undefined;
   private seenDevicesLoading: Promise<Set<string>> | undefined;
+  /** fitness_discipline values outside the activity table already logged at debug this run (SPEC section 4.2). */
+  private readonly unknownDisciplines = new Set<string>();
 
   constructor(options: PollerOptions) {
     this.config = options.config;
@@ -844,6 +849,7 @@ export class Poller {
     if (!isDetectable(workout)) {
       return;
     }
+    this.noteDiscipline(workout);
     runtime.latestWorkout = workout;
     if (this.currentState === 'locked') {
       return;
@@ -879,6 +885,7 @@ export class Poller {
     const workout = await this.store.withValidToken(account.id, (token) => this.api.getWorkout(workoutId, token));
     this.debugWorkout(runtime, workout);
     await this.recordDeviceSeen(runtime, workout);
+    this.noteDiscipline(workout);
     runtime.latestWorkout = workout;
     this.setLockedLimit(workout);
     if (workout.status === 'COMPLETE') {
@@ -1227,6 +1234,19 @@ export class Poller {
   /* ----------------------------------------------------------------------------------------------
    * Helpers
    * -------------------------------------------------------------------------------------------- */
+
+  /**
+   * Logs a fitness_discipline outside the activity table once per run at debug (SPEC section 4.2): it
+   * matches triggers set to all activities, or a config entry written as the same value. The raw value is what the line prints.
+   */
+  private noteDiscipline(workout: Workout): void {
+    const discipline = workout.fitnessDiscipline;
+    if (isKnownDiscipline(discipline) || this.unknownDisciplines.has(discipline)) {
+      return;
+    }
+    this.unknownDisciplines.add(discipline);
+    this.log.debug(`Unknown fitness discipline ${discipline || 'none'}: it matches all activities, or an activity written in config as the same value`);
+  }
 
   private debugWorkout(runtime: AccountRuntime, workout: Workout | null): void {
     if (workout === null) {

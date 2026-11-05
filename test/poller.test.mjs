@@ -160,16 +160,21 @@ describe('standby', () => {
     assert.equal(h.poller.state, 'standby');
   });
 
-  it('logs the ride title when there is one, else the workout title or name, else the discipline alone', async () => {
+  it('logs the readable discipline with the ride title when there is one, else the workout title or name, else the discipline alone', async () => {
     const cycling = apiFixture('workout-in-progress-cycling').data[0];
     const parsed = (extra) => ({ fitnessDiscipline: 'strength', title: '', name: '', ride: null, ...extra });
     const ride = { id: 'r', title: cycling.ride.title, duration: 1800 };
-    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'cycling', title: cycling.title, name: cycling.name, ride })), 'cycling, 30 min Power Zone Ride');
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'cycling', title: cycling.title, name: cycling.name, ride })), 'Cycling, 30 min Power Zone Ride');
     assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout', ride: { id: 'r', title: 'Bodyweight Strength', duration: 600 } })),
-      'strength, Bodyweight Strength');
-    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout' })), 'strength, Just Work Out');
-    assert.equal(workoutLabel(parsed({ name: 'Strength Workout', ride: { id: 'r', title: '', duration: null } })), 'strength, Strength Workout');
-    assert.equal(workoutLabel(parsed({ title: '  ' })), 'strength');
+      'Strength, Bodyweight Strength');
+    assert.equal(workoutLabel(parsed({ title: 'Just Work Out', name: 'Strength Workout' })), 'Strength, Just Work Out');
+    assert.equal(workoutLabel(parsed({ name: 'Strength Workout', ride: { id: 'r', title: '', duration: null } })), 'Strength, Strength Workout');
+    assert.equal(workoutLabel(parsed({ title: '  ' })), 'Strength');
+    // The readable name from the activity table, and the raw value for a discipline outside it.
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'caesar', title: '20 min Full Body Row' })), 'Rowing, 20 min Full Body Row');
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'circuit' })), 'Tread bootcamp');
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'caesar_bootcamp' })), 'Row bootcamp');
+    assert.equal(workoutLabel(parsed({ fitnessDiscipline: 'boxing', title: 'Shadowboxing' })), 'boxing, Shadowboxing');
 
     // An app class with no ride title and empty title and name no longer logs "(strength, )".
     const h = await harness({ accounts: [OWNER] });
@@ -177,7 +182,7 @@ describe('standby', () => {
     h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', appClass)).route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
     h.poller.start();
     await h.clock.advance(0);
-    assert.deepEqual(h.lines.info, ['Owner: workout started (strength)', 'Workout: on']);
+    assert.deepEqual(h.lines.info, ['Owner: workout started (Strength)', 'Workout: on']);
   });
 
   it('counts a workout already in progress at startup as started on the first poll', async () => {
@@ -187,7 +192,7 @@ describe('standby', () => {
     await h.clock.advance(0);
     assert.equal(h.poller.state, 'locked');
     assert.equal(h.named('workoutStarted').length, 1);
-    assert.deepEqual(h.lines.info, ['Owner: workout started (cycling, 30 min Power Zone Ride)', 'Workout: on']);
+    assert.deepEqual(h.lines.info, ['Owner: workout started (Cycling, 30 min Power Zone Ride)', 'Workout: on']);
   });
 });
 
@@ -332,6 +337,52 @@ describe('lock-on', () => {
     await tv.clock.advance(0);
     assert.deepEqual(states(tv), { 't-any': true, 't-member': false, 't-run': false, 't-bike': false, 't-tread': false, 't-tv': true, 't-app': false });
     assert.equal(tv.lines.info.some((line) => line.includes('device')), false);
+  });
+});
+
+describe('activities', () => {
+  const states = (h) => Object.fromEntries(h.poller.triggerStates);
+  const triggers = [
+    workoutTrigger({ id: 't-all' }),
+    workoutTrigger({ id: 't-row', name: 'Row', activities: ['rowing'] }),
+    workoutTrigger({ id: 't-row-bootcamp', name: 'Row bootcamp', activities: ['row_bootcamp'] }),
+    workoutTrigger({ id: 't-tread-bootcamp', name: 'Tread bootcamp', activities: ['tread_bootcamp'] }),
+    workoutTrigger({ id: 't-slug', name: 'Hand written', activities: ['caesar'] }),
+    workoutTrigger({ id: 't-ride', name: 'Ride', activities: ['cycling'] }),
+  ];
+
+  it('turns on a sensor limited to Rowing, Tread bootcamp, or Row bootcamp for the slugs Peloton sends', async () => {
+    const cases = [
+      ['caesar', { 't-row': true, 't-row-bootcamp': false, 't-tread-bootcamp': false, 't-slug': true }],
+      ['caesar_bootcamp', { 't-row': false, 't-row-bootcamp': true, 't-tread-bootcamp': false, 't-slug': false }],
+      ['circuit', { 't-row': false, 't-row-bootcamp': false, 't-tread-bootcamp': true, 't-slug': false }],
+    ];
+    for (const [discipline, expected] of cases) {
+      const h = await harness({ accounts: [OWNER], config: { triggers } });
+      h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: discipline }))
+        .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+      h.poller.start();
+      await h.clock.advance(0);
+      assert.deepEqual(states(h), { 't-all': true, ...expected, 't-ride': false }, discipline);
+      assert.match(h.lines.debug[0], new RegExp(`^Owner: poll workout w-str-0002 IN_PROGRESS ${discipline} `), 'debug keeps the raw slug');
+      assert.deepEqual(h.lines.debug.filter((line) => line.startsWith('Unknown fitness discipline')), [], `${discipline} is known`);
+      h.poller.stop();
+    }
+  });
+
+  it('logs an unknown discipline once at debug with its raw value and matches it for all activities, not for the known ones', async () => {
+    const h = await harness({ accounts: [OWNER], config: { triggers } });
+    h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'boxing' }))
+      .route(WORKOUT_STR, jsonResponse(200, { ...apiFixture('workout-single-in-progress-cycling'), id: 'w-str-0002', fitness_discipline: 'boxing' }));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(states(h), { 't-all': true, 't-row': false, 't-row-bootcamp': false, 't-tread-bootcamp': false, 't-slug': false, 't-ride': false });
+    await h.clock.advance(60_000);
+    assert.ok(h.fetch.count(WORKOUT_STR) >= 2, 'the locked workout was polled again');
+    assert.deepEqual(h.lines.debug.filter((line) => line.startsWith('Unknown fitness discipline')), [
+      'Unknown fitness discipline boxing: it matches all activities, or an activity written in config as the same value',
+    ]);
+    h.poller.stop();
   });
 });
 
@@ -1091,13 +1142,13 @@ describe('devices seen', () => {
 
   it('logs one info line the first time an unknown code appears, on the polled account when no owner is known, and never again', async () => {
     const h = await harness({ accounts: [OWNER] });
-    h.fetch.route(LIST_OWNER, listBody('w-row-0001', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    h.fetch.route(LIST_OWNER, listBody('w-row-0001', 'COMPLETE', { fitness_discipline: 'caesar', device_type: 'row_v1', platform: 'home_row' }));
     h.poller.start();
     await h.clock.advance(0);
     assert.deepEqual(newDeviceLines(h), [
       'New Peloton device seen: device_type=row_v1, platform=home_row. Open the settings page, Advanced, Devices seen, to report it.',
     ]);
-    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing' }]);
+    assert.deepEqual(seen(h, 'a1'), [{ deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar' }]);
     await h.clock.advance(600_000);
     assert.equal(newDeviceLines(h).length, 1);
     assert.equal(seen(h, 'a1').length, 1);
@@ -1106,7 +1157,7 @@ describe('devices seen', () => {
 
     // After a restart the pair is read back from the store, so it is not reported a second time.
     const again = await harness({ accounts: [OWNER], records: { a1: { devicesSeen: seen(h, 'a1') } } });
-    again.fetch.route(LIST_OWNER, listBody('w-row-0002', 'COMPLETE', { fitness_discipline: 'rowing', device_type: 'row_v1', platform: 'home_row' }));
+    again.fetch.route(LIST_OWNER, listBody('w-row-0002', 'COMPLETE', { fitness_discipline: 'caesar', device_type: 'row_v1', platform: 'home_row' }));
     again.poller.start();
     await again.clock.advance(120_000);
     assert.deepEqual(newDeviceLines(again), []);

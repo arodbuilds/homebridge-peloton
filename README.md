@@ -25,6 +25,7 @@ Not affiliated with or endorsed by Peloton Interactive. Uses Peloton's undocumen
 - [Browser sign-in](#browser-sign-in)
 - [How it works](#how-it-works)
 - [Devices](#devices)
+- [Activities](#activities)
 - [Privacy and what is stored where](#privacy-and-what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -63,7 +64,7 @@ The password is stored in your Homebridge config so the plugin can sign in again
 
 ![A Workout trigger card: name, Occupancy sensor or Switch, who, device, the activity chips, and the keep-on time](assets/screenshots/trigger-workout.png)
 
-Under Triggers, click Add trigger. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (Any device, Bike, Tread, Guide, Apple TV, or Phone or tablet app; see [Devices](#devices)), and the activities that count; all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
+Under Triggers, click Add trigger. The sensor is on while a matching workout is in progress. Pick who it watches (anyone on the membership, or one member), the device (Any device, Bike, Tread, Guide, Apple TV, or Phone or tablet app; see [Devices](#devices)), and the activities that count (Cycling, Running, Walking, Rowing, Strength, Yoga, Stretching, Meditation, Cardio, Bike bootcamp, Tread bootcamp, Row bootcamp; see [Activities](#activities)); all twelve are selected to start with. Keep on after the workout ends holds the sensor on for a while after the class finishes, 90 seconds by default, so stacked classes do not turn your scene off between them.
 
 Give the trigger a name (it starts as "Workout"), choose Occupancy sensor or Switch as its HomeKit kind, and click Done. Save, restart Homebridge, and the sensor appears in the Home app under the bridge. In Automations, choose the sensor as the trigger and pick what should happen when it turns on and when it turns off.
 
@@ -148,6 +149,27 @@ Every row but the original Bike was observed on a live membership between Septem
 
 When the plugin sees a code it does not know it logs one line, "New Peloton device seen", and lists the pair under Advanced, Devices seen, tagged Unknown with a Copy report button. The report holds the two codes, the workout type such as cycling or strength, and the plugin version, nothing else; paste it into a [device report](https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml) and the next release can name the device and, for new hardware, give it a filter.
 
+## Activities
+
+The Activities chips on a Workout trigger match the workout type Peloton records on each workout (its `fitness_discipline`). Peloton's names for three of them differ from the plugin's: a row is `caesar`, a Tread bootcamp `circuit`, and a Row bootcamp `caesar_bootcamp`. The plugin keeps its own names in config.json and matches through this table, which comes from the workout types Peloton listed on the maintainer's account on November 5, 2026:
+
+| Activity | Saved in config.json as | Peloton's workout type |
+| --- | --- | --- |
+| Cycling | cycling | cycling |
+| Running | running | running |
+| Walking | walking | walking |
+| Rowing | rowing | caesar |
+| Strength | strength | strength |
+| Yoga | yoga | yoga |
+| Stretching | stretching | stretching |
+| Meditation | meditation | meditation |
+| Cardio | cardio | cardio |
+| Bike bootcamp | bike_bootcamp | bike_bootcamp |
+| Tread bootcamp | tread_bootcamp | circuit |
+| Row bootcamp | row_bootcamp | caesar_bootcamp |
+
+If you edit config.json by hand, either name works: `caesar` is read as `rowing`, `circuit` as `tread_bootcamp`, and `caesar_bootcamp` as `row_bootcamp`. A workout type the plugin does not know yet counts for a trigger with all activities selected, never for one limited to the twelve activities, and the log shows it as Peloton sends it. In config.json by hand you can list such a type exactly as Peloton sends it; the plugin logs one warning at startup that it is not a known activity and matches it as written.
+
 ## Privacy and what is stored where
 
 - Session tokens live in `homebridge-peloton/accounts/` inside the Homebridge storage folder, one file per account with mode 0600, readable only by the Homebridge user. They are never written to config.json, the log, or the settings page.
@@ -166,6 +188,7 @@ When the plugin sees a code it does not know it logs one line, "New Peloton devi
 - **"Peloton is rate limiting this network".** Peloton answered that this network is asking too often, so polling pauses for the time in the warning. It resumes on its own. If it happens often, raise the standby interval under Polling or shorten how long the fast polling switch stays on; other Peloton apps or scripts on the same network count against the same limit.
 - **A workout is noticed late.** Without the fast polling automation the plugin polls at the standby interval. Set up the automation, or lower the standby interval under Polling. A second workout soon after the first is caught quickly either way, for the minutes set by Keep fast polling after a workout ends under Advanced.
 - **A trigger with a Device filter never turns on.** The workout may come from hardware or an app the plugin does not know yet. Check Devices seen under Advanced: an Unknown row means the codes are new, and Copy report gives you everything a [device report](https://github.com/arodbuilds/homebridge-peloton/issues/new?template=device-report.yml) needs. A trigger set to Any device works meanwhile.
+- **A trigger limited to some activities never turns on.** Before 1.0.4, a trigger limited to Rowing, Tread bootcamp, or Row bootcamp never turned on for those workouts, because Peloton names them differently (see [Activities](#activities)); update the plugin, no settings change is needed. For any other workout type, turn on Debug logging under Advanced: a line "Unknown fitness discipline" names a workout type the plugin does not know yet, which a trigger with all activities selected matches, as does one that lists that exact name in config.json by hand. Please open an issue with that name.
 
 ## Development
 

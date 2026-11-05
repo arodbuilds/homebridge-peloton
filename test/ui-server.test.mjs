@@ -100,7 +100,7 @@ function harness({ records = { a1: connected(), 'u-member-0002': PROFILE }, logi
     },
     fetchImpl: fetch,
     now: clock.now,
-    version: '1.0.3',
+    version: '1.0.4',
     debug: (line) => debugLines.push(line),
   });
   return { handlers, store, fetch, clock, login, debugLines, routes: handlers.routes() };
@@ -136,7 +136,7 @@ describe('/status', () => {
     const { routes, fetch } = harness();
     const result = await routes['/status']();
     assert.equal(result.ok, true);
-    assert.equal(result.version, '1.0.3');
+    assert.equal(result.version, '1.0.4');
     assert.deepEqual(result.devices, FIXTURE_DEVICES);
     const owner = result.accounts.find((account) => account.id === 'a1');
     assert.deepEqual(owner, {
@@ -442,13 +442,14 @@ describe('/household', () => {
 });
 
 describe('/devices-seen', () => {
-  it('lists every pair across the records with its display name and a known flag, without duplicates or malformed entries', async () => {
+  it('lists every pair across the records with its names, a known flag, and the raw discipline, without duplicates or malformed entries', async () => {
     const { routes } = harness({
       records: {
         a1: connected({
           devicesSeen: [
             { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling' },
-            { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing' },
+            { deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar' },
+            { deviceType: 'android', platform: 'android_app', discipline: 'boxing' },
             { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running' },
             { deviceType: 42, platform: 'x' },
           ],
@@ -463,10 +464,10 @@ describe('/devices-seen', () => {
     assert.deepEqual(await routes['/devices-seen'](), {
       ok: true,
       devices: [
-        { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', name: 'Bike+', known: true },
-        { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false },
-        { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running', name: 'Apple Health import', known: true },
-        { deviceType: 'android', platform: 'android_app', discipline: '', name: 'android', known: false },
+        { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', disciplineName: 'Cycling', name: 'Bike+', known: true },
+        { deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar', disciplineName: 'Rowing', name: 'row_v1', known: false },
+        { deviceType: 'android', platform: 'android_app', discipline: 'boxing', disciplineName: 'boxing', name: 'android', known: false },
+        { deviceType: 'apple_health', platform: 'iOS_app', discipline: 'running', disciplineName: 'Running', name: 'Apple Health import', known: true },
       ],
     });
     assert.deepEqual(await routes['/devices-seen'](), (await routes['/devices-seen']()), 'a plain read');

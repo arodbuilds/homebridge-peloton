@@ -38,6 +38,24 @@ export const ACTIVITIES = [
   'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio', 'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
 ];
 
+/**
+ * The three Peloton slugs that differ from the plugin's activity id (src/activities.ts, SPEC section
+ * 4.2). A config written by hand may carry the slug; the page reads it as the id, as the plugin does,
+ * so opening and saving the page never drops it.
+ */
+export const ACTIVITY_SLUGS = { caesar: 'rowing', circuit: 'tread_bootcamp', caesar_bootcamp: 'row_bootcamp' };
+
+/** The plugin's activity id for a config entry: the id itself, the id for a Peloton slug, else undefined. */
+export function activityId(entry) {
+  if (typeof entry !== 'string') {
+    return undefined;
+  }
+  if (ACTIVITIES.includes(entry)) {
+    return entry;
+  }
+  return Object.hasOwn(ACTIVITY_SLUGS, entry) ? ACTIVITY_SLUGS[entry] : undefined;
+}
+
 export const DEVICES = ['any', 'bike', 'tread', 'guide', 'appletv', 'app'];
 
 /**
@@ -60,14 +78,18 @@ export function devicesText(devices) {
 
 /**
  * The text Copy report puts on the clipboard for an Unknown row of the Devices seen block: the two
- * device codes, the workout type the pair was seen on, and the plugin version. Nothing else.
+ * device codes, the workout type the pair was seen on, and the plugin version. Nothing else. The
+ * discipline is the raw Peloton slug, since the report exists to identify codes exactly, with the
+ * readable name the server sends after it in brackets when it differs ("caesar (Rowing)").
  */
 export function deviceReport(device, version) {
+  const name = typeof device.disciplineName === 'string' ? device.disciplineName : '';
+  const discipline = name.length > 0 && name !== device.discipline ? `${device.discipline} (${name})` : device.discipline;
   return [
     'Unknown Peloton device',
     `device_type: ${device.deviceType}`,
     `platform: ${device.platform}`,
-    `discipline: ${device.discipline}`,
+    `discipline: ${discipline}`,
     `plugin: homebridge-peloton ${version}`,
   ].join('\n');
 }
@@ -147,7 +169,7 @@ function readTrigger(raw, seen) {
   }
   // activities absent or empty means all (SPEC section 6): every chip starts selected, and exportTrigger
   // writes an all-selected set back as an empty list.
-  const listed = Array.isArray(record.activities) ? record.activities.filter((entry) => typeof entry === 'string' && ACTIVITIES.includes(entry)) : [];
+  const listed = Array.isArray(record.activities) ? record.activities.map(activityId).filter((entry) => entry !== undefined) : [];
   return {
     ...base,
     activities: listed.length === 0 ? [...ACTIVITIES] : [...new Set(listed)],

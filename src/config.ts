@@ -9,6 +9,8 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { activityIdOf } from './activities.js';
+
 export type AccessoryKind = 'occupancy' | 'switch';
 
 /**
@@ -34,7 +36,10 @@ export interface WorkoutTriggerConfig {
   accessory: AccessoryKind;
   /** "anyone" or an account userId. */
   who: string;
-  /** Empty means all activities. */
+  /**
+   * Empty means all activities. Each entry is a plugin activity id from src/activities.ts (a Peloton
+   * slug written by hand is normalised to its id); an entry outside the table is matched as written.
+   */
   activities: string[];
   /** "any", "bike", "tread", "guide", "appletv", or "app"; matched against the workout's platform. */
   device: DeviceFilter;
@@ -111,12 +116,6 @@ export const CONFIG_DEFAULTS = {
   workoutTriggerName: 'Workout',
   hrZoneTriggerName: 'Heart rate zone',
 } as const;
-
-/** fitness_discipline values the Activities chips offer (SPEC section 4.2). */
-export const KNOWN_ACTIVITIES = [
-  'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio',
-  'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
-] as const;
 
 export type WarnFn = (line: string) => void;
 
@@ -274,8 +273,16 @@ function activities(value: unknown, label: string, warn: WarnFn): string[] {
   const result: string[] = [];
   for (const entry of value) {
     if (typeof entry === 'string' && entry.length > 0) {
-      if (!result.includes(entry)) {
-        result.push(entry);
+      // A Peloton slug written by hand (caesar, circuit, caesar_bootcamp) is valid and becomes the
+      // plugin's id without a warn line (src/activities.ts). Anything else is kept and, as in 1.0.3,
+      // matched against the workout's fitness_discipline as written.
+      const id = activityIdOf(entry);
+      if (id === undefined) {
+        warn(`${label}.activities contains "${entry}", which is not a known activity; it is matched as written`);
+      }
+      const normalised = id ?? entry;
+      if (!result.includes(normalised)) {
+        result.push(normalised);
       }
     } else {
       warn(`${label}.activities contains a value that is not a name, ignoring it`);

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { getLatestWorkout, getPerformanceGraph } from '../dist/api/peloton-api.js';
 import {
   APP_PLATFORMS,
+  activitiesMatch,
   CLASS_LIMIT_GRACE_MINUTES,
   HoldAfterEnd,
   HoldState,
@@ -144,6 +145,67 @@ describe('workoutMatches', () => {
     const odd = { ...cycling, fitnessDiscipline: 'caving' };
     assert.equal(workoutMatches(trigger({ activities: ['cycling'] }), odd, OWNER), false);
     assert.equal(workoutMatches(trigger(), odd, OWNER), true);
+  });
+
+  // The twelve fitness_discipline slugs GET /api/me listed in workout_counts on the maintainer's account
+  // on November 5, 2026, each with the plugin activity id that stands for it (SPEC section 4.2).
+  const OBSERVED = [
+    ['bike_bootcamp', 'bike_bootcamp'],
+    ['caesar', 'rowing'],
+    ['caesar_bootcamp', 'row_bootcamp'],
+    ['cardio', 'cardio'],
+    ['circuit', 'tread_bootcamp'],
+    ['cycling', 'cycling'],
+    ['meditation', 'meditation'],
+    ['running', 'running'],
+    ['strength', 'strength'],
+    ['stretching', 'stretching'],
+    ['walking', 'walking'],
+    ['yoga', 'yoga'],
+  ];
+
+  it('matches each of the twelve observed disciplines against a list restricted to its activity and no other', async () => {
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    const ids = OBSERVED.map(([, id]) => id);
+    for (const [discipline, id] of OBSERVED) {
+      const workout = { ...cycling, fitnessDiscipline: discipline };
+      assert.equal(workoutMatches(trigger({ activities: [id] }), workout, OWNER), true, `${discipline} matches ${id}`);
+      const others = ids.filter((other) => other !== id);
+      assert.equal(workoutMatches(trigger({ activities: others }), workout, OWNER), false, `${discipline} matches none of the other eleven`);
+      assert.equal(workoutMatches(trigger({ activities: ids }), workout, OWNER), true, `${discipline} matches all twelve chosen`);
+      assert.equal(workoutMatches(trigger(), workout, OWNER), true, `${discipline} matches all activities`);
+    }
+  });
+
+  it('matches the legacy ids rowing, tread_bootcamp, and row_bootcamp against the slugs Peloton sends', () => {
+    assert.equal(activitiesMatch(['rowing'], 'caesar'), true);
+    assert.equal(activitiesMatch(['tread_bootcamp'], 'circuit'), true);
+    assert.equal(activitiesMatch(['row_bootcamp'], 'caesar_bootcamp'), true);
+    // Peloton never sends the plugin's ids for these three, and the ids are not slugs of their own.
+    assert.equal(activitiesMatch(['rowing'], 'rowing'), false);
+    assert.equal(activitiesMatch(['tread_bootcamp'], 'tread_bootcamp'), false);
+    assert.equal(activitiesMatch(['row_bootcamp'], 'row_bootcamp'), false);
+    assert.equal(activitiesMatch(['rowing'], 'caesar_bootcamp'), false);
+    assert.equal(activitiesMatch(['row_bootcamp'], 'caesar'), false);
+    assert.equal(activitiesMatch(['tread_bootcamp'], 'running'), false);
+  });
+
+  it('matches an unknown discipline against all activities and never against the known ids', () => {
+    assert.equal(activitiesMatch([], 'boxing'), true);
+    assert.equal(activitiesMatch([], ''), true);
+    assert.equal(activitiesMatch(['cycling', 'rowing', 'row_bootcamp', 'tread_bootcamp'], 'boxing'), false);
+    assert.equal(activitiesMatch(['cycling'], ''), false);
+  });
+
+  it('matches an entry outside the table literally, as 1.0.3 did', async () => {
+    assert.equal(activitiesMatch(['boxing'], 'boxing'), true);
+    assert.equal(activitiesMatch(['boxing'], 'Boxing'), false, 'exactly as written');
+    assert.equal(activitiesMatch(['boxing'], 'cycling'), false);
+    assert.equal(activitiesMatch(['cycling', 'boxing'], 'cycling'), true);
+    assert.equal(activitiesMatch(['toString'], 'toString'), true, 'an inherited object key is an ordinary unknown entry');
+    assert.equal(activitiesMatch(['toString'], 'cycling'), false);
+    const cycling = await workoutFixture('workout-in-progress-cycling');
+    assert.equal(workoutMatches(trigger({ activities: ['boxing'] }), { ...cycling, fitnessDiscipline: 'boxing' }, OWNER), true);
   });
 
   it('maps bike to platform home_bike, tread to home_tread, guide to tiger, appletv to apple_tv, and app to the app platforms', () => {
