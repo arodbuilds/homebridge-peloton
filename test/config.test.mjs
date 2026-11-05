@@ -178,6 +178,41 @@ describe('clamping and defaulting', () => {
     ]);
   });
 
+  it('keeps the plugin activity ids as they are, the legacy rowing and bootcamp ids included, with no warn line', () => {
+    const ids = [
+      'cycling', 'running', 'walking', 'rowing', 'strength', 'yoga', 'stretching', 'meditation', 'cardio', 'bike_bootcamp', 'tread_bootcamp', 'row_bootcamp',
+    ];
+    const { config, warnings } = parse({ triggers: [{ id: 't1', type: 'workout', activities: ids }] });
+    assert.deepEqual(config.triggers[0].activities, ids);
+    assert.deepEqual(warnings, []);
+  });
+
+  it('normalises the Peloton slugs caesar, circuit, and caesar_bootcamp to the plugin ids with no warn line', () => {
+    const { config, warnings } = parse({
+      triggers: [
+        { id: 't1', type: 'workout', activities: ['caesar'] },
+        { id: 't2', type: 'workout', activities: ['circuit', 'caesar_bootcamp', 'cycling'] },
+        { id: 't3', type: 'workout', activities: ['rowing', 'caesar', 'tread_bootcamp', 'circuit'] },
+      ],
+    });
+    assert.deepEqual(config.triggers[0].activities, ['rowing']);
+    assert.deepEqual(config.triggers[1].activities, ['tread_bootcamp', 'row_bootcamp', 'cycling']);
+    assert.deepEqual(config.triggers[2].activities, ['rowing', 'tread_bootcamp'], 'a slug next to its own id is one entry');
+    assert.deepEqual(warnings, []);
+  });
+
+  it('keeps an unknown activity as written with one warn line, so a restricted list never widens to all activities', () => {
+    const { config, warnings } = parse({
+      triggers: [{ id: 't1', type: 'workout', activities: ['boxing'] }, { id: 't2', type: 'workout', activities: ['cycling', 'boxing'] }],
+    });
+    assert.deepEqual(config.triggers[0].activities, ['boxing']);
+    assert.deepEqual(config.triggers[1].activities, ['cycling', 'boxing']);
+    assert.deepEqual(warnings, [
+      'triggers[0].activities contains "boxing", which is not a known activity; it is matched as written',
+      'triggers[1].activities contains "boxing", which is not a known activity; it is matched as written',
+    ]);
+  });
+
   it('accepts device any, bike, tread, guide, appletv, and app and defaults anything else to any with one warn line', () => {
     const { config, warnings } = parse({
       triggers: [

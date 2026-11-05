@@ -4,6 +4,7 @@
  * timing comes from an injected clock.
  */
 
+import { activityMatches } from '../activities.js';
 import type { HeartRateZone, PerformanceGraph, Workout } from '../api/peloton-api.js';
 import type { DeviceFilter, HrZoneTriggerConfig, WorkoutTriggerConfig } from '../config.js';
 import type { StoredZone } from '../store/account-store.js';
@@ -104,12 +105,22 @@ export function deviceMatches(device: DeviceFilter | string, workout: Workout): 
   return platform !== undefined && workout.platform === platform;
 }
 
+/**
+ * Compares a trigger's activities with the workout's fitness_discipline through the activity table
+ * (src/activities.ts), since three of the plugin's ids differ from Peloton's slug (rowing is caesar).
+ * An empty list is all activities and matches every discipline, an unknown one included; a restricted
+ * list never matches an unknown discipline, unless it holds an entry written as that discipline.
+ */
+export function activitiesMatch(activities: readonly string[], discipline: string): boolean {
+  return activities.length === 0 || activities.some((activity) => activityMatches(activity, discipline));
+}
+
 /** Workout trigger matching per SPEC section 8.3: who, then activities, then device. */
 export function workoutMatches(trigger: WorkoutTriggerConfig, workout: Workout, accountUserId: string): boolean {
   if (trigger.who !== 'anyone' && trigger.who !== accountUserId) {
     return false;
   }
-  if (trigger.activities.length > 0 && !trigger.activities.includes(workout.fitnessDiscipline)) {
+  if (!activitiesMatch(trigger.activities, workout.fitnessDiscipline)) {
     return false;
   }
   return deviceMatches(trigger.device, workout);

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { FIELD_LABELS, STAGE_MESSAGES, stageMessage } from '../homebridge-ui/public/copy.js';
 import {
-  ACTIVITIES, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, deviceReport, devicesText, duplicateTrigger, exportConfig,
+  ACTIVITIES, activityId, backupBlock, blockWithoutPasswords, defaultTriggerName, deviceLabel, deviceReport, devicesText, duplicateTrigger, exportConfig,
   findForbiddenKey, isFreshConfig, mergeConnectedAccount, newId, newTrigger, readConfig, removeAccountEntry, validate,
 } from '../homebridge-ui/public/model.js';
 import { required } from '../homebridge-ui/public/shell-copy.js';
@@ -131,6 +131,22 @@ describe('triggers', () => {
     // Deselecting one chip writes the other eleven, so the plugin restricts the trigger.
     config.triggers[0].activities = ACTIVITIES.filter((activity) => activity !== 'cycling');
     assert.equal(exportConfig(config).triggers[0].activities.length, 11);
+  });
+
+  it('reads the Peloton slugs caesar, circuit, and caesar_bootcamp as the plugin ids, so saving the page keeps the restriction', () => {
+    const config = readConfig({
+      triggers: [
+        { id: 't1', type: 'workout', name: 'Rows', activities: ['caesar'] },
+        { id: 't2', type: 'workout', name: 'Bootcamps', activities: ['circuit', 'caesar_bootcamp', 'tread_bootcamp'] },
+        { id: 't3', type: 'workout', name: 'Legacy', activities: ['rowing', 'tread_bootcamp', 'row_bootcamp'] },
+      ],
+    });
+    const exported = exportConfig(config).triggers;
+    assert.deepEqual(exported[0].activities, ['rowing']);
+    assert.deepEqual(exported[1].activities, ['tread_bootcamp', 'row_bootcamp']);
+    assert.deepEqual(exported[2].activities, ['rowing', 'tread_bootcamp', 'row_bootcamp']);
+    assert.equal(activityId('toString'), undefined);
+    assert.equal(activityId(3), undefined);
   });
 
   it('duplicates with a new id and a copy name that dodges existing names', () => {

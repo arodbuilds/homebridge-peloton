@@ -335,6 +335,51 @@ describe('lock-on', () => {
   });
 });
 
+describe('activities', () => {
+  const states = (h) => Object.fromEntries(h.poller.triggerStates);
+  const triggers = [
+    workoutTrigger({ id: 't-all' }),
+    workoutTrigger({ id: 't-row', name: 'Row', activities: ['rowing'] }),
+    workoutTrigger({ id: 't-row-bootcamp', name: 'Row bootcamp', activities: ['row_bootcamp'] }),
+    workoutTrigger({ id: 't-tread-bootcamp', name: 'Tread bootcamp', activities: ['tread_bootcamp'] }),
+    workoutTrigger({ id: 't-slug', name: 'Hand written', activities: ['caesar'] }),
+    workoutTrigger({ id: 't-ride', name: 'Ride', activities: ['cycling'] }),
+  ];
+
+  it('turns on a sensor limited to Rowing, Tread bootcamp, or Row bootcamp for the slugs Peloton sends', async () => {
+    const cases = [
+      ['caesar', { 't-row': true, 't-row-bootcamp': false, 't-tread-bootcamp': false, 't-slug': true }],
+      ['caesar_bootcamp', { 't-row': false, 't-row-bootcamp': true, 't-tread-bootcamp': false, 't-slug': false }],
+      ['circuit', { 't-row': false, 't-row-bootcamp': false, 't-tread-bootcamp': true, 't-slug': false }],
+    ];
+    for (const [discipline, expected] of cases) {
+      const h = await harness({ accounts: [OWNER], config: { triggers } });
+      h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: discipline }))
+        .route(WORKOUT_STR, workoutBody('w-str-0002', 'IN_PROGRESS'));
+      h.poller.start();
+      await h.clock.advance(0);
+      assert.deepEqual(states(h), { 't-all': true, ...expected, 't-ride': false }, discipline);
+      assert.deepEqual(h.lines.debug.filter((line) => line.startsWith('Unknown fitness discipline')), [], `${discipline} is known`);
+      h.poller.stop();
+    }
+  });
+
+  it('logs an unknown discipline once at debug with its raw value and matches it for all activities, not for the known ones', async () => {
+    const h = await harness({ accounts: [OWNER], config: { triggers } });
+    h.fetch.route(LIST_OWNER, listBody('w-str-0002', 'IN_PROGRESS', { fitness_discipline: 'boxing' }))
+      .route(WORKOUT_STR, jsonResponse(200, { ...apiFixture('workout-single-in-progress-cycling'), id: 'w-str-0002', fitness_discipline: 'boxing' }));
+    h.poller.start();
+    await h.clock.advance(0);
+    assert.deepEqual(states(h), { 't-all': true, 't-row': false, 't-row-bootcamp': false, 't-tread-bootcamp': false, 't-slug': false, 't-ride': false });
+    await h.clock.advance(60_000);
+    assert.ok(h.fetch.count(WORKOUT_STR) >= 2, 'the locked workout was polled again');
+    assert.deepEqual(h.lines.debug.filter((line) => line.startsWith('Unknown fitness discipline')), [
+      'Unknown fitness discipline boxing: it matches all activities, or an activity written in config as the same value',
+    ]);
+    h.poller.stop();
+  });
+});
+
 describe('workout end', () => {
   async function lockedOnCycling(options = {}) {
     const h = await harness({ accounts: [OWNER], ...options });
