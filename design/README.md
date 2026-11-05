@@ -265,6 +265,7 @@ The 1.0.3 release (SPEC.md section 16, 1.0.3 clarifications) settled these.
 
 ## Clarifications from 1.0.4
 The 1.0.4 release (SPEC.md section 16, 1.0.4 clarifications) settled these.
+- Activities: the chips, their labels and the ids the page saves are unchanged. Three ids differ from the slug Peloton sends (Rowing is `caesar`, Tread bootcamp `circuit`, Row bootcamp `caesar_bootcamp`; SPEC 4.2); the plugin matches through its activity table, so nothing on the page changes for it. A config written by hand with one of those three slugs opens with the matching chip selected and is saved with the page's id.
 - Devices seen: the rows still read "{display name} ({device_type}, {platform})" and show no discipline. The report Copy report puts on the clipboard (and shows under the row when the clipboard is out of reach) keeps the raw slug on its discipline line and adds the readable name in brackets after it when the plugin knows the slug: "discipline: caesar (Rowing)". An unknown slug reads as the raw value alone. /devices-seen sends the readable name as disciplineName, so the page holds no discipline table of its own.
 
 ## Empty state / first run
