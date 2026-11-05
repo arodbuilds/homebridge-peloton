@@ -78,14 +78,18 @@ export function devicesText(devices) {
 
 /**
  * The text Copy report puts on the clipboard for an Unknown row of the Devices seen block: the two
- * device codes, the workout type the pair was seen on, and the plugin version. Nothing else.
+ * device codes, the workout type the pair was seen on, and the plugin version. Nothing else. The
+ * discipline is the raw Peloton slug, since the report exists to identify codes exactly, with the
+ * readable name the server sends after it in brackets when it differs ("caesar (Rowing)").
  */
 export function deviceReport(device, version) {
+  const name = typeof device.disciplineName === 'string' ? device.disciplineName : '';
+  const discipline = name.length > 0 && name !== device.discipline ? `${device.discipline} (${name})` : device.discipline;
   return [
     'Unknown Peloton device',
     `device_type: ${device.deviceType}`,
     `platform: ${device.platform}`,
-    `discipline: ${device.discipline}`,
+    `discipline: ${discipline}`,
     `plugin: homebridge-peloton ${version}`,
   ].join('\n');
 }

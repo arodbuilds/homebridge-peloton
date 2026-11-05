@@ -279,8 +279,16 @@ describe('devices line', () => {
 describe('device report', () => {
   it('is exactly the two codes, the discipline, and the plugin version, one per line', () => {
     assert.equal(
-      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false }, '1.0.3'),
-      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.3',
+      deviceReport({ deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar', disciplineName: 'Rowing', name: 'row_v1', known: false }, '1.0.3'),
+      'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: caesar (Rowing)\nplugin: homebridge-peloton 1.0.3',
     );
+  });
+
+  it('carries the raw discipline alone when its readable name is the same, unknown, or missing', () => {
+    const device = { deviceType: 'android', platform: 'android_app', name: 'android', known: false };
+    const line = (extra) => deviceReport({ ...device, ...extra }, '1.0.3').split('\n')[3];
+    assert.equal(line({ discipline: 'boxing', disciplineName: 'boxing' }), 'discipline: boxing');
+    assert.equal(line({ discipline: 'cycling' }), 'discipline: cycling', 'an answer from an earlier server has no readable name');
+    assert.equal(line({ discipline: '', disciplineName: '' }), 'discipline: ');
   });
 });

@@ -82,8 +82,8 @@ const STATUS = {
   ],
   version: '1.0.3',
   devicesSeen: [
-    { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', name: 'Bike+', known: true },
-    { deviceType: 'row_v1', platform: 'home_row', discipline: 'rowing', name: 'row_v1', known: false },
+    { deviceType: 'home_bike_plus', platform: 'home_bike', discipline: 'cycling', disciplineName: 'Cycling', name: 'Bike+', known: true },
+    { deviceType: 'row_v1', platform: 'home_row', discipline: 'caesar', disciplineName: 'Rowing', name: 'row_v1', known: false },
   ],
 };
 
@@ -490,7 +490,7 @@ describe('devices seen', () => {
   });
 
   it('copies exactly the report text for the row, and shows None seen yet without pairs', async () => {
-    const REPORT = 'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: rowing\nplugin: homebridge-peloton 1.0.3';
+    const REPORT = 'Unknown Peloton device\ndevice_type: row_v1\nplatform: home_row\ndiscipline: caesar (Rowing)\nplugin: homebridge-peloton 1.0.3';
     const copied = [];
     globalThis.navigator.clipboard = { writeText: async (text) => copied.push(text) };
     try {

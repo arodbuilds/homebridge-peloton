@@ -11,7 +11,7 @@ import type { Me, PerformanceGraph, Subscription, Workout } from '../api/peloton
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError } from '../auth/peloton-auth.js';
 import type { HrZoneTriggerConfig, PelotonConfig, TriggerConfig, WorkoutTriggerConfig } from '../config.js';
-import { isKnownDiscipline } from '../activities.js';
+import { disciplineName, isKnownDiscipline } from '../activities.js';
 import { isKnownDevice } from '../devices.js';
 import { applyHousehold, applyProfile } from '../store/account-connect.js';
 import type { AccountRecord, AccountState, SeenDevice } from '../store/account-store.js';
@@ -157,13 +157,15 @@ export const GRAPH_EVERY_N = 5;
 export const STALE_SAMPLE_POLLS = 2;
 
 /**
- * What the "workout started" line says in brackets (SPEC section 11): the discipline, then the class
- * title when there is one (ride.title, else the workout's title, else its name), so an app class
- * without a ride title logs the discipline alone rather than an empty title.
+ * What the "workout started" line says in brackets (SPEC section 11): the discipline's readable name
+ * ("Rowing" for caesar, the raw value when it is unknown, src/activities.ts), then the class title
+ * when there is one (ride.title, else the workout's title, else its name), so an app class without
+ * a ride title logs the discipline alone rather than an empty title. Debug lines keep the raw value.
  */
 export function workoutLabel(workout: Workout): string {
+  const discipline = disciplineName(workout.fitnessDiscipline);
   const title = (workout.ride?.title || workout.title || workout.name).trim();
-  return title.length > 0 ? `${workout.fitnessDiscipline}, ${title}` : workout.fitnessDiscipline;
+  return title.length > 0 ? `${discipline}, ${title}` : discipline;
 }
 
 /** The key a device_type and platform pair is remembered by. */

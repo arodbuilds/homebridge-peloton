@@ -404,7 +404,7 @@ describe('wiring', () => {
       Characteristic.OccupancyDetected.OCCUPANCY_DETECTED,
     );
     assert.equal(strength.getService(Service.Switch).getCharacteristic(Characteristic.On).value, false);
-    assert.deepEqual(log.lines.info.slice(2), ['Alex: workout started (cycling, 30 min Power Zone Ride)', 'Workout: on']);
+    assert.deepEqual(log.lines.info.slice(2), ['Alex: workout started (Cycling, 30 min Power Zone Ride)', 'Workout: on']);
 
     const fast = platform.accessories.get(fastPollingSwitchUuid(hap));
     const on = fast.getService(Service.Switch).getCharacteristic(Characteristic.On);

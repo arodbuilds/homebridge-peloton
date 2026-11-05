@@ -263,6 +263,10 @@ The 1.0.3 release (SPEC.md section 16, 1.0.3 clarifications) settled these.
 - Treat an unfinished workout as ended after (minutes): a new number field under Advanced directly after Keep fast polling after a workout ends (minutes), default 180, from 30 to 720, with the caption above (SPEC 8.2: a class is treated as ended 20 minutes after its length, and this setting covers workouts without one). A value outside the range, or an empty box, reads "Enter a number of minutes from 30 to 720."; like every field under Advanced, a value other than the default opens the disclosure. The input carries min 30 and max 720.
 - Version: the footer reads 1.0.3 from package.json through /status.
 
+## Clarifications from 1.0.4
+The 1.0.4 release (SPEC.md section 16, 1.0.4 clarifications) settled these.
+- Devices seen: the rows still read "{display name} ({device_type}, {platform})" and show no discipline. The report Copy report puts on the clipboard (and shows under the row when the clipboard is out of reach) keeps the raw slug on its discipline line and adds the readable name in brackets after it when the plugin knows the slug: "discipline: caesar (Rowing)". An unknown slug reads as the raw value alone. /devices-seen sends the readable name as disciplineName, so the page holds no discipline table of its own.
+
 ## Empty state / first run
 Fresh install toggle in the prototype: Accounts shows a single inviting panel with the email/password form and "Sign in as the membership owner and your household will appear here." Triggers shows "No triggers yet. Add one to create a HomeKit sensor." with Add trigger. Polling and Settings keep defaults. Save is disabled with the "Nothing to save yet" state. Immediately after the owner connects, household profiles appear as Not connected and the polling callout is visible.
 

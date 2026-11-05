@@ -9,6 +9,7 @@
 
 import { Buffer } from 'node:buffer';
 
+import { disciplineName } from '../activities.js';
 import type { Me, Subscription, Workout } from '../api/peloton-api.js';
 import { ApiError } from '../api/peloton-api.js';
 import { AuthError, type AuthStage, type BrowserStart, type Tokens } from '../auth/peloton-auth.js';
@@ -85,8 +86,10 @@ export interface StatusResponse {
 export interface DeviceSeenSummary {
   deviceType: string;
   platform: string;
-  /** The fitness discipline of the workout the pair was first seen on. */
+  /** The fitness discipline of the workout the pair was first seen on, the raw Peloton slug. */
   discipline: string;
+  /** The discipline's readable name from src/activities.ts ("Rowing" for caesar), or the raw slug when it is unknown. */
+  disciplineName: string;
   /** The display name from src/devices.ts, or the raw device_type when it has none. */
   name: string;
   /** True when device_type has a display name; an unknown pair is the one to report. */
@@ -525,10 +528,12 @@ export function devicesSeenOf(records: Map<string, AccountRecord>): DeviceSeenSu
         continue;
       }
       keys.add(key);
+      const discipline = typeof entry.discipline === 'string' ? entry.discipline : '';
       devices.push({
         deviceType: entry.deviceType,
         platform: entry.platform,
-        discipline: typeof entry.discipline === 'string' ? entry.discipline : '',
+        discipline,
+        disciplineName: disciplineName(discipline),
         name: deviceDisplayName(entry.deviceType),
         known: isKnownDevice(entry.deviceType),
       });
