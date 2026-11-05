@@ -1,6 +1,6 @@
 # homebridge-peloton SPEC
 
-Version: 1.0.3 (October 28, 2026: Node 26 in CI, the open workout limit, the household pause on rate limits, revoking a removed account's session, and the version)
+Version: 1.0.4 (November 5, 2026: activity matching through Peloton's discipline slugs, readable activity names, the revoke verified, and the version)
 Status: source of truth for the build. design/README.md is normative for the settings page layout, copy, and states; this document is normative for everything else. Where the two disagree, this document wins and the design README gets a clarification in the same PR.
 
 ## 1. Purpose
@@ -525,3 +525,4 @@ A runtime fix release (November 5, 2026): activity matching through Peloton's di
 - 13: the rules, activities, config, page model, page, poller, platform and UI server suites named above.
 - 14: the README lists the twelve activities with the slug each matches, in a new Activities section after Devices.
 - design/README.md: the device report's discipline line and the hand-written slugs (listed there under Clarifications from 1.0.4).
+- The version is 1.0.4 in package.json, package-lock.json, the test literals and the bug report form. engines, keywords, the files list, the platform registration and the storage paths are unchanged, so the verification requirements in 14 stay met.

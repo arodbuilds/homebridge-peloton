@@ -2,6 +2,22 @@
 
 All notable changes to homebridge-peloton are listed here. The format follows Keep a Changelog, and the project follows semantic versioning from 0.1.0-beta.1. The release notes of a version are its section here and nothing else.
 
+## 1.0.4 (2026-11-05)
+
+A fix release. Workout triggers limited to Rowing, Tread bootcamp, or Row bootcamp now turn on, and the log names activities the way the settings page does.
+
+### Fixed
+
+- Triggers limited to Rowing, Tread bootcamp, or Row bootcamp. If a sensor limited to any of these three activities never turned on for those workouts, it now does, with no settings change needed. Peloton records them as `caesar`, `circuit`, and `caesar_bootcamp`, and the plugin was looking for its own names instead. The plugin now matches through one table of its twelve activities and the workout types Peloton sends (`src/activities.ts`, taken from the workout types listed on the maintainer's account on November 5, 2026). Saved settings keep working as they are, and 1.0.3 still reads them. A config edited by hand may use Peloton's names; they are read as the plugin's. Triggers with all activities selected were not affected.
+
+### Changed
+
+- Readable activity names. The "workout started" log line names the activity as the settings page does, for example "Rowing" rather than `caesar`, and shows Peloton's own value for a workout type the plugin does not know yet. Debug lines keep Peloton's values. The device report from Devices seen keeps Peloton's value on its discipline line and adds the readable name in brackets when the plugin knows it, for example `discipline: caesar (Rowing)`.
+- An activity in config.json that is neither one of the twelve nor one of Peloton's names for them now logs one warning at startup saying it is not a known activity and is matched as written. It still matches a workout whose type is exactly that name, as in 1.0.3. A workout type the plugin does not know is logged once per run at debug.
+- The session revoke on account removal is verified against Peloton (October 28, 2026): Peloton accepts it and the session ends.
+- Version 1.0.4 in package.json, package-lock.json, the version literals in the tests and the bug report form. SPEC section 16 (1.0.4 clarifications) and the sections it names, the README (a new Activities section and a troubleshooting entry) and design/README.md carry the changes.
+- Tests: an activities suite for the table; rules, config, page model and poller tests for every observed workout type, the three legacy names, the three Peloton names in config, and an unknown type; the log line, the device report and /devices-seen with readable names.
+
 ## 1.0.3 (2026-10-28)
 
 A runtime release. A workout Peloton leaves in progress no longer keeps sensors on, a rate limit from Peloton pauses polling for the whole household instead of making it worse, removing an account signs its session out with Peloton, and Node 26 is tested.
